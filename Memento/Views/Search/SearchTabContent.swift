@@ -15,6 +15,7 @@ struct SearchTabContent: View {
                 } else {
                     List {
                         Text("搜索结果")
+                            .foregroundStyle(.secondary)
                     }
                     .listStyle(.plain)
                 }

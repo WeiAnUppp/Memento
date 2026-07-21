@@ -21,6 +21,7 @@ struct ContentView: View {
                 }
             }
 
+            // 右下角拍照按钮
             Button {
                 // TODO: Day 8
             } label: {
