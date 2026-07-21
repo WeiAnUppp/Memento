@@ -10,9 +10,14 @@ import SwiftUI
 struct ItemListView: View {
     // TODO: Day 9 — 时间线物品列表
     var body: some View {
-        NavigationStack {
-            Text("物品列表")
-                .navigationTitle("列表")
+        List {
+            // TODO: 物品数据
+            ContentUnavailableView(
+                "暂无物品",
+                systemImage: "tray",
+                description: Text("拍照记录你的第一个物品")
+            )
         }
+        .listStyle(.plain)
     }
 }

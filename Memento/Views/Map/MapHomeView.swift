@@ -24,10 +24,28 @@ struct MapHomeView: View {
             }
         }
         .mapStyle(.standard)
-        .mapControls {
-            MapUserLocationButton()
-        }
         .ignoresSafeArea(edges: .top)
+        .overlay(alignment: .topTrailing) {
+            // 自定义定位按钮 — 放在筛选按钮下方
+            Button {
+                guard let location = locationService.currentLocation else { return }
+                withAnimation {
+                    viewModel.cameraPosition = .region(
+                        MKCoordinateRegion(
+                            center: location.coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                        )
+                    )
+                }
+            } label: {
+                Image(systemName: "location.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+            }
+            .glassEffect(.regular.interactive(), in: .circle)
+            .padding(.top, 58)   // 筛选按钮下方
+            .padding(.trailing, 16)
+        }
         .onAppear {
             locationService.requestPermission()
         }

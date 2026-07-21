@@ -7,39 +7,182 @@
 
 import SwiftUI
 
+// MARK: - App Page
+
+enum AppPage: String, CaseIterable {
+    case map = "地图"
+    case list = "列表"
+    case settings = "设置"
+
+    var icon: String {
+        switch self {
+        case .map: return "map.fill"
+        case .list: return "list.bullet"
+        case .settings: return "gearshape.fill"
+        }
+    }
+}
+
+// MARK: - ContentView
+
 struct ContentView: View {
+    @State private var selectedPage: AppPage = .map
+    @State private var showCapture = false
+    @State private var showSearch = false
+
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TabView {
-                Tab("地图", systemImage: "map") {
-                    MapHomeView()
-                }
+        ZStack(alignment: .bottom) {
+            // 页面内容（全屏）
+            pageContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Tab("列表", systemImage: "list.bullet") {
-                    ItemListView()
-                }
-
-                Tab("设置", systemImage: "gearshape") {
-                    SettingsView()
-                }
-
-                Tab(role: .search) {
-                    SearchTabContent()
-                }
+            // 顶部浮层
+            VStack(spacing: 0) {
+                topBar
+                Spacer()
             }
 
-            // 右下角拍照按钮
-            Button {
-                // TODO: Day 8
-            } label: {
-                Image(systemName: "camera.fill")
+            // 底部导航栏 【 +  搜索  🎤 】
+            bottomNavBar
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+        }
+        .fullScreenCover(isPresented: $showSearch) {
+            SearchModalView()
+        }
+    }
+
+    // MARK: - Top Bar
+
+    private var topBar: some View {
+        HStack(alignment: .center) {
+            // 非地图页面：左上角标题
+            if selectedPage != .map {
+                Text(selectedPage.rawValue)
                     .font(.title2)
-                    .frame(width: 56, height: 56)
+                    .fontWeight(.semibold)
+            }
+
+            Spacer()
+
+            // 筛选菜单 — iOS 26 Messages 风格
+            Menu {
+                Picker("视图", selection: $selectedPage) {
+                    ForEach(AppPage.allCases, id: \.self) { page in
+                        Label(page.rawValue, systemImage: page.icon)
+                            .tag(page)
+                    }
+                }
+            } label: {
+                Image(systemName: "line.horizontal.3.decrease")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .padding(.trailing, 20)
-            .padding(.bottom, 88)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Bottom Nav Bar 【 +  搜索  🎤 】
+
+    private var bottomNavBar: some View {
+        HStack(spacing: 12) {
+            // ⊕ 加号按钮
+            Button {
+                showCapture = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .frame(width: 44, height: 44)
+            }
+            .glassEffect(.regular.interactive(), in: .circle)
+
+            // 搜索栏
+            Button {
+                showSearch = true
+            } label: {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    Text("搜索物品...")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular, in: .capsule)
+
+            // 语音按钮
+            Button {
+                // TODO: Day 11 — 语音输入
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+            }
+            .glassEffect(.regular.interactive(), in: .circle)
+        }
+    }
+
+    // MARK: - Page Content
+
+    /// 顶部栏高度，用于非地图页面顶部留白
+    private var topBarHeight: CGFloat { 60 }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch selectedPage {
+        case .map:
+            MapHomeView()
+        case .list:
+            ItemListView()
+                .padding(.top, topBarHeight)
+        case .settings:
+            SettingsView()
+                .padding(.top, topBarHeight)
+        }
+    }
+}
+
+// MARK: - Search Modal
+
+private struct SearchModalView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if searchText.isEmpty {
+                    ContentUnavailableView(
+                        "搜索物品",
+                        systemImage: "magnifyingglass",
+                        description: Text("输入关键词查找你记录过的物品")
+                    )
+                } else {
+                    List {
+                        Text("搜索结果")
+                            .foregroundStyle(.secondary)
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("搜索")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .searchable(text: $searchText)
     }
 }
 
