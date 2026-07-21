@@ -45,7 +45,7 @@ struct ContentView: View {
             // 底部导航栏 【 +  搜索  🎤 】
             bottomNavBar
                 .padding(.horizontal, 23)
-                .padding(.bottom, 4)
+                .padding(.bottom, 18)
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
