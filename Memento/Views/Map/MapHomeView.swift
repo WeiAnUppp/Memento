@@ -40,10 +40,11 @@ struct MapHomeView: View {
             } label: {
                 Image(systemName: "location.fill")
                     .font(.title3)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .padding(.top, 58)   // 筛选按钮下方
+            .tint(.primary)
+            .padding(.top, 64)   // 筛选按钮下方
             .padding(.trailing, 16)
         }
         .onAppear {

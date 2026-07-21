@@ -44,8 +44,8 @@ struct ContentView: View {
 
             // 底部导航栏 【 +  搜索  🎤 】
             bottomNavBar
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 23)
+                .padding(.bottom, 4)
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
@@ -76,9 +76,10 @@ struct ContentView: View {
             } label: {
                 Image(systemName: "line.horizontal.3.decrease")
                     .font(.title2)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
+            .tint(.primary)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -88,7 +89,7 @@ struct ContentView: View {
     // MARK: - Bottom Nav Bar 【 +  搜索  🎤 】
 
     private var bottomNavBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             // ⊕ 加号按钮
             Button {
                 showCapture = true
@@ -96,26 +97,24 @@ struct ContentView: View {
                 Image(systemName: "plus")
                     .font(.title3)
                     .fontWeight(.medium)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
+            .tint(.primary)
 
             // 搜索栏
             Button {
                 showSearch = true
             } label: {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    Text("搜索物品...")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                Label("搜索物品...", systemImage: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .frame(height: 50)
+                    .glassEffect(.regular, in: .capsule)
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular, in: .capsule)
+            .tint(.primary)
 
             // 语音按钮
             Button {
@@ -123,16 +122,17 @@ struct ContentView: View {
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.title3)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
+            .tint(.primary)
         }
     }
 
     // MARK: - Page Content
 
     /// 顶部栏高度，用于非地图页面顶部留白
-    private var topBarHeight: CGFloat { 60 }
+    private var topBarHeight: CGFloat { 66 }
 
     @ViewBuilder
     private var pageContent: some View {
