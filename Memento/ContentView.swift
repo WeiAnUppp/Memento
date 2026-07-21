@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var searchText = ""
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             TabView {
@@ -19,14 +17,10 @@ struct ContentView: View {
                 }
 
                 Tab(role: .search) {
-                    NavigationStack {
-                        SearchTabContent(searchText: searchText)
-                    }
+                    SearchTabContent()
                 }
             }
-            .searchable(text: $searchText)
 
-            // 地图页右下角拍照按钮
             Button {
                 // TODO: Day 8
             } label: {

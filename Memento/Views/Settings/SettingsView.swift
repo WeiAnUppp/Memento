@@ -1,12 +1,36 @@
 import SwiftUI
 
+enum AppearanceMode: String, CaseIterable {
+    case system = "跟随系统"
+    case light = "浅色"
+    case dark = "深色"
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 struct SettingsView: View {
+    @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @State private var apiKey: String = ""
     @State private var showingSaved = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("外观") {
+                    Picker("主题", selection: $appearanceMode) {
+                        ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("MiMo API") {
                     SecureField("API Key", text: $apiKey)
                         .onSubmit { saveAPIKey() }
