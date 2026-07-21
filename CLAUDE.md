@@ -77,16 +77,16 @@ let requestBody: [String: Any] = [
 1. **拍照记录物品** — 调用系统相机拍照
 2. **AI 自动识别描述** — 图片发给 MiMo v2.5，返回物品名称、特征、场景描述
 3. **GPS 自动标记位置** — 拍照时记录经纬度
-4. **地图首页** — MapKit 展示所有物品标记，点击查看详情
-5. **语音搜索** — 语音输入"我之前放在床边的黑色盒子在哪"
-6. **混合搜索** — MiMo 将模糊查询解析为关键词 + Apple NL 向量检索 + 关键词匹配，融合排序
+4. **地图首页** — MapKit 展示所有物品标记，点击查看详情；右下角浮动拍照按钮
+5. **浮动搜索按钮** — 独立圆形玻璃按钮浮于 TabView 上方，按下展开为搜索栏（文字输入 + 语音图标）
+6. **混合搜索** — MiMo 解析查询为关键词 + Apple NL 向量检索 + 文本匹配，融合排序
 7. **搜索结果展示** — 列表 + 地图定位 + TTS 语音播报
 
 ### 可以简化（P1）
 
 8. **手动补充描述** — 语音或文字追加备注
 9. **物品列表页** — 时间线方式浏览所有记录
-10. **基础动画与转场** — Liquid Glass 风格的流畅交互
+10. **基础动画与转场** — Liquid Glass 风格转场
 11. **设置页** — MiMo API Key 填写、基础偏好
 
 ### 文档里写、代码不做（P2）
@@ -149,8 +149,9 @@ Memento/                         # Xcode 项目名
 │   │   ├── CaptureView.swift    # 拍照界面
 │   │   └── ItemPreviewView.swift # 拍照后AI识别结果预览
 │   ├── Search/
-│   │   ├── SearchView.swift     # 搜索页（语音+文字）
-│   │   └── SearchResultView.swift
+│   │   ├── SearchTabView.swift   # 搜索 Tab（role: .search，TabBar 右侧圆形按钮）
+│   │   ├── SearchBarView.swift   # 搜索栏组件
+│   │   └── SearchResultView.swift # 搜索结果列表
 │   ├── List/
 │   │   └── ItemListView.swift   # 物品列表
 │   ├── Detail/
@@ -281,19 +282,35 @@ iOS 26 引入了自 iOS 7 以来最大的设计变革。核心概念：控件像
 
 ### 忆物 App 中的应用
 
-```swift
-// 地图首页 — 右下角浮动操作按钮组
-GlassEffectContainer(spacing: 12) {
-    Button { /* 拍照记录 */ } label: {
-        Image(systemName: "camera.fill")
-    }
-    .glassEffect(.regular.interactive(), in: .circle)
+TabView 结构：三个标签页 + 独立浮动搜索按钮
 
-    Button { /* 语音搜索 */ } label: {
-        Image(systemName: "mic.fill")
-    }
-    .glassEffect(.regular.interactive(), in: .circle)
+```swift
+// TabView — 地图、列表、设置
+TabView {
+    Tab("地图", systemImage: "map") { MapHomeView() }
+    Tab("列表", systemImage: "list.bullet") { ItemListView() }
+    Tab("设置", systemImage: "gearshape") { SettingsView() }
 }
+
+// 浮动搜索按钮 — 独立圆形玻璃按钮，浮于 TabView 上方
+// 按下后展开为搜索栏（顶部横条：文字输入 + 右侧语音图标）
+Button { /* 展开搜索栏 */ } label: {
+    Image(systemName: "magnifyingglass")
+}
+.glassEffect(.regular.tint(.blue).interactive(), in: .circle)
+.controlSize(.extraLarge)
+.overlay(alignment: .bottom) {
+    // 搜索栏（展开状态）：TextField + 语音按钮
+    if isSearchActive {
+        SearchBarView()
+    }
+}
+
+// 地图首页 — 右下角浮动拍照按钮
+Button { /* 拍照记录 */ } label: {
+    Image(systemName: "camera.fill")
+}
+.glassEffect(.regular.interactive(), in: .circle)
 
 // 拍照页 — 主操作按钮
 Button("识别物品") { }
@@ -304,13 +321,7 @@ Button("识别物品") { }
 // AI 识别结果卡片
 VStack { /* 物品信息 */ }
     .glassEffect(.regular, in: .rect(cornerRadius: 16))
-
-// TabView — 自动适配 Liquid Glass（无需手动设置）
-TabView {
-    Tab("地图", systemImage: "map") { MapHomeView() }
-    Tab("搜索", systemImage: "magnifyingglass") { SearchView() }
-    Tab("列表", systemImage: "list.bullet") { ItemListView() }
-}
+```
 ```
 
 ### 关键 API 速查

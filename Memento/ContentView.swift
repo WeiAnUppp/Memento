@@ -1,21 +1,43 @@
-//
-//  ContentView.swift
-//  Memento
-//
-//  Created by HUAWEI MateBook X on 2026/7/21.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @State private var searchText = ""
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        ZStack(alignment: .bottomTrailing) {
+            TabView {
+                Tab("地图", systemImage: "map") {
+                    MapHomeView()
+                }
+
+                Tab("列表", systemImage: "list.bullet") {
+                    ItemListView()
+                }
+
+                Tab("设置", systemImage: "gearshape") {
+                    SettingsView()
+                }
+
+                Tab(role: .search) {
+                    NavigationStack {
+                        SearchTabContent(searchText: searchText)
+                    }
+                }
+            }
+            .searchable(text: $searchText)
+
+            // 地图页右下角拍照按钮
+            Button {
+                // TODO: Day 8
+            } label: {
+                Image(systemName: "camera.fill")
+                    .font(.title2)
+                    .frame(width: 56, height: 56)
+            }
+            .glassEffect(.regular.interactive(), in: .circle)
+            .padding(.trailing, 20)
+            .padding(.bottom, 88)
         }
-        .padding()
     }
 }
 
