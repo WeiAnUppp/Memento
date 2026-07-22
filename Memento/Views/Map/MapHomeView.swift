@@ -13,27 +13,31 @@ struct MapHomeView: View {
     let locationService: LocationService
     @State private var showDetail = false
 
-    var body: some View {
-        Map(position: $viewModel.cameraPosition) {
-            UserAnnotation()
+    /// 递增触发地图居中（0 = 初始，每次需要居中时 +1）
+    @State private var centerTrigger = 0
 
-            ForEach(viewModel.items) { item in
-                Annotation(item.name, coordinate: item.coordinate) {
-                    ItemAnnotation(item: item)
-                        .onTapGesture {
-                            viewModel.selectedItem = item
-                            showDetail = true
-                        }
-                }
+    var body: some View {
+        MapKitView(
+            items: viewModel.items,
+            movingItemId: viewModel.movingItemId,
+            userCoordinate: locationService.currentLocation?.coordinate,
+            centerTrigger: centerTrigger,
+            onTapItem: { id in
+                guard let item = viewModel.items.first(where: { $0.id == id }) else { return }
+                viewModel.selectedItem = item
+                showDetail = true
+            },
+            onMoveStarted: { id in
+                viewModel.startMoving(byId: id)
+            },
+            onMoveCompleted: { id, lat, lon in
+                viewModel.commitMove(id: id, latitude: lat, longitude: lon)
             }
-        }
-        .mapStyle(.standard)
-        .mapControls {}   // 隐藏默认控件（比例尺、指南针等）
-        .ignoresSafeArea(edges: .top)
+        )
+        .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
             Button {
-                guard let location = locationService.currentLocation else { return }
-                viewModel.centerOnUser(location.coordinate)
+                centerTrigger += 1
             } label: {
                 Image(systemName: "location.fill")
                     .font(.title3)
@@ -43,6 +47,17 @@ struct MapHomeView: View {
             .tint(.primary)
             .padding(.top, 64)
             .padding(.trailing, 16)
+        }
+        .overlay(alignment: .top) {
+            if viewModel.movingItemId != nil {
+                Text("拖拽大头针到正确位置，松手确认")
+                    .font(.caption)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(.top, 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .sheet(isPresented: $showDetail) {
             if let item = viewModel.selectedItem {
@@ -54,14 +69,13 @@ struct MapHomeView: View {
             viewModel.loadItems()
         }
         .task {
-            // 仅在首次启动时居中到用户位置，避免每次切回地图都重新跳转
             guard !viewModel.hasInitialCentered else { return }
             while locationService.currentLocation == nil {
                 try? await Task.sleep(for: .milliseconds(200))
             }
-            guard let location = locationService.currentLocation else { return }
-            viewModel.centerOnUser(location.coordinate)
+            guard locationService.currentLocation != nil else { return }
             viewModel.hasInitialCentered = true
+            centerTrigger += 1
         }
     }
 }

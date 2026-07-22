@@ -305,6 +305,27 @@ final class DatabaseService {
         }
     }
 
+    /// 仅更新物品 GPS 坐标（长按拖拽大头针后调用）
+    func updateLocation(id: Int64, latitude: Double, longitude: Double) throws {
+        try queue.sync {
+            let sql = "UPDATE items SET latitude=?, longitude=?, updated_at=? WHERE id=?;"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            sqlite3_bind_double(stmt, 1, latitude)
+            sqlite3_bind_double(stmt, 2, longitude)
+            bindText(stmt, 3, formatDate(Date()))
+            sqlite3_bind_int64(stmt, 4, id)
+
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+        }
+    }
+
     func delete(id: Int64) throws {
         try queue.sync {
             let sql = "DELETE FROM items WHERE id=?;"

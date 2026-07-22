@@ -18,6 +18,9 @@ final class MapViewModel {
     /// 是否已完成首次定位居中（避免每次切回地图都重新居中）
     var hasInitialCentered = false
 
+    /// 当前正在被拖拽的大头针 ID（nil = 无拖拽）
+    var movingItemId: Int64?
+
     var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
@@ -70,5 +73,30 @@ final class MapViewModel {
                 )
             )
         }
+    }
+
+    // MARK: - 大头针拖拽移动（MKMapView 原生拖拽回调）
+
+    /// 拖拽开始
+    func startMoving(byId id: Int64) {
+        movingItemId = id
+    }
+
+    /// 拖拽结束：新坐标写入 items + 数据库
+    func commitMove(id: Int64, latitude: Double, longitude: Double) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            movingItemId = nil
+            return
+        }
+        items[index].latitude = latitude
+        items[index].longitude = longitude
+
+        do {
+            try dbService.updateLocation(id: id, latitude: latitude, longitude: longitude)
+        } catch {
+            print("[MapViewModel] 移动保存失败: \(error)")
+        }
+
+        movingItemId = nil
     }
 }
