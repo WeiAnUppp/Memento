@@ -98,10 +98,15 @@ class APIConfig {
     }
 
     init() {
-        self.apiBaseURL = UserDefaults.standard.string(forKey: keyAPIBaseURL) ?? ""
-        self.apiKey = UserDefaults.standard.string(forKey: keyAPIKey) ?? ""
-        self.modelName = UserDefaults.standard.string(forKey: keyModelName) ?? "gpt-4o"
-        let raw = UserDefaults.standard.string(forKey: keyProvider) ?? ""
+        let storedURL = UserDefaults.standard.string(forKey: keyAPIBaseURL)
+        let storedKey = UserDefaults.standard.string(forKey: keyAPIKey)
+        let storedModel = UserDefaults.standard.string(forKey: keyModelName)
+        let storedProvider = UserDefaults.standard.string(forKey: keyProvider)
+
+        self.apiBaseURL = storedURL ?? ""
+        self.apiKey = storedKey ?? ""
+        self.modelName = storedModel ?? ""
+        let raw = storedProvider ?? ""
         self.selectedProvider = APIProvider(rawValue: raw) ?? .custom
     }
 

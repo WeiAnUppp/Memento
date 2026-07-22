@@ -11,6 +11,7 @@ import MapKit
 struct MapHomeView: View {
     @State private var viewModel = MapViewModel()
     @State private var locationService = LocationService()
+    @State private var showDetail = false
 
     var body: some View {
         Map(position: $viewModel.cameraPosition) {
@@ -19,24 +20,19 @@ struct MapHomeView: View {
             ForEach(viewModel.items) { item in
                 Annotation(item.name, coordinate: item.coordinate) {
                     ItemAnnotation(item: item)
-                        .onTapGesture { viewModel.selectedItem = item }
+                        .onTapGesture {
+                            viewModel.selectedItem = item
+                            showDetail = true
+                        }
                 }
             }
         }
         .mapStyle(.standard)
         .ignoresSafeArea(edges: .top)
         .overlay(alignment: .topTrailing) {
-            // 自定义定位按钮 — 放在筛选按钮下方
             Button {
                 guard let location = locationService.currentLocation else { return }
-                withAnimation {
-                    viewModel.cameraPosition = .region(
-                        MKCoordinateRegion(
-                            center: location.coordinate,
-                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                        )
-                    )
-                }
+                viewModel.centerOnUser(location.coordinate)
             } label: {
                 Image(systemName: "location.fill")
                     .font(.title3)
@@ -44,26 +40,24 @@ struct MapHomeView: View {
             }
             .glassEffect(.regular.interactive(), in: .circle)
             .tint(.primary)
-            .padding(.top, 64)   // 筛选按钮下方
+            .padding(.top, 64)
             .padding(.trailing, 16)
+        }
+        .sheet(isPresented: $showDetail) {
+            if let item = viewModel.selectedItem {
+                ItemDetailView(item: item)
+            }
         }
         .onAppear {
             locationService.requestPermission()
+            viewModel.loadItems()
         }
         .task {
-            // 等待获取到用户位置后自动定位
             while locationService.currentLocation == nil {
                 try? await Task.sleep(for: .milliseconds(200))
             }
             guard let location = locationService.currentLocation else { return }
-            withAnimation {
-                viewModel.cameraPosition = .region(
-                    MKCoordinateRegion(
-                        center: location.coordinate,
-                        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                    )
-                )
-            }
+            viewModel.centerOnUser(location.coordinate)
         }
     }
 }

@@ -8,16 +8,89 @@
 import SwiftUI
 
 struct ItemListView: View {
-    // TODO: Day 9 — 时间线物品列表
+    @State private var items: [Item] = []
+    @State private var selectedItem: Item?
+    @State private var showDetail = false
+
+    private let dbService = DatabaseService.shared
+
     var body: some View {
+        VStack(spacing: 0) {
+            if items.isEmpty {
+                emptyView
+            } else {
+                listView
+            }
+        }
+        .onAppear { loadItems() }
+        .sheet(isPresented: $showDetail) {
+            if let item = selectedItem {
+                ItemDetailView(item: item)
+            }
+        }
+    }
+
+    // MARK: - List
+
+    private var listView: some View {
         List {
-            // TODO: 物品数据
-            ContentUnavailableView(
-                "暂无物品",
-                systemImage: "tray",
-                description: Text("拍照记录你的第一个物品")
-            )
+            ForEach(items) { item in
+                Button {
+                    selectedItem = item
+                    showDetail = true
+                } label: {
+                    ItemCard(item: item)
+                }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        deleteItem(item)
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
+            }
         }
         .listStyle(.plain)
+        .refreshable {
+            loadItems()
+        }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyView: some View {
+        ContentUnavailableView {
+            Label("暂无物品", systemImage: "tray")
+        } description: {
+            Text("拍照记录你的第一个物品")
+        }
+    }
+
+    // MARK: - Data
+
+    private func loadItems() {
+        do {
+            items = try dbService.fetchAll()
+        } catch {
+            print("[ItemListView] 加载失败: \(error)")
+        }
+    }
+
+    private func deleteItem(_ item: Item) {
+        guard let id = item.id else { return }
+
+        // 删除图片文件
+        DatabaseService.deleteImage(at: item.imagePath)
+
+        // 删除数据库记录
+        do {
+            try dbService.delete(id: id)
+            items.removeAll { $0.id == id }
+        } catch {
+            print("[ItemListView] 删除失败: \(error)")
+        }
     }
 }

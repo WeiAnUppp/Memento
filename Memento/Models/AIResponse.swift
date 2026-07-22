@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct AIResponse: Codable {
+struct AIResponse: Codable, Equatable {
     let name: String
     let description: String
     let scene: String

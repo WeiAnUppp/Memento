@@ -8,7 +8,7 @@
 import Foundation
 import CoreLocation
 
-struct Item: Identifiable, Codable {
+struct Item: Identifiable, Codable, Equatable {
     var id: Int64?
     var name: String
     var itemDescription: String

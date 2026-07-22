@@ -12,6 +12,9 @@ import MapKit
 final class MapViewModel {
     var items: [Item] = []
     var selectedItem: Item?
+    var isLoading = false
+    var loadError: String?
+
     var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
@@ -19,9 +22,25 @@ final class MapViewModel {
         )
     )
 
+    private let dbService = DatabaseService.shared
+
+    // MARK: - Data Loading
+
     func loadItems() {
-        // TODO: Day 9 — 从数据库加载物品
+        isLoading = true
+        loadError = nil
+
+        do {
+            items = try dbService.fetchAll()
+        } catch {
+            loadError = error.localizedDescription
+            print("[MapViewModel] 加载失败: \(error)")
+        }
+
+        isLoading = false
     }
+
+    // MARK: - Actions
 
     func focusOnItem(_ item: Item) {
         withAnimation {
@@ -32,6 +51,21 @@ final class MapViewModel {
                 )
             )
             selectedItem = item
+        }
+    }
+
+    func deselectItem() {
+        selectedItem = nil
+    }
+
+    func centerOnUser(_ location: CLLocationCoordinate2D) {
+        withAnimation {
+            cameraPosition = .region(
+                MKCoordinateRegion(
+                    center: location,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                )
+            )
         }
     }
 }

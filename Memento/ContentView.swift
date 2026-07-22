@@ -28,7 +28,12 @@ enum AppPage: String, CaseIterable {
 struct ContentView: View {
     @State private var selectedPage: AppPage = .map
     @State private var showSearch = false
+    @State private var showCapture = false
+    @State private var captureSourceType: UIImagePickerController.SourceType = .photoLibrary
     @State private var settingsNavigationDepth = 0
+
+    /// 地图需要知道何时刷新（拍照保存后）
+    @State private var mapRefreshID = 0
 
     /// 设置页使用原生大标题导航栏，不需要自定义顶栏
     private var showCustomTopBar: Bool {
@@ -64,6 +69,12 @@ struct ContentView: View {
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
+        }
+        .fullScreenCover(isPresented: $showCapture) {
+            CaptureView(sourceType: captureSourceType) {
+                showCapture = false
+                mapRefreshID += 1
+            }
         }
     }
 
@@ -117,11 +128,17 @@ struct ContentView: View {
             .tint(.primary)
 
             Menu {
-                Button { } label: {
-                    Label("照片", systemImage: "photo.on.rectangle")
-                }
-                Button { } label: {
+                Button {
+                    captureSourceType = .camera
+                    showCapture = true
+                } label: {
                     Label("相机", systemImage: "camera.fill")
+                }
+                Button {
+                    captureSourceType = .photoLibrary
+                    showCapture = true
+                } label: {
+                    Label("照片", systemImage: "photo.on.rectangle")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -141,6 +158,7 @@ struct ContentView: View {
         switch selectedPage {
         case .map:
             MapHomeView()
+                .id(mapRefreshID)
 
         case .list:
             ItemListView()

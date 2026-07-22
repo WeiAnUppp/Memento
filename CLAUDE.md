@@ -186,53 +186,53 @@ class MapViewModel {
 
 ### 数据库设计
 
+> ✅ 已实现。MVP 阶段放弃 sqlite-vec（iOS 不支持动态加载 C 扩展），改用 **embedding BLOB + Accelerate 暴力搜索**，几百条数据亚毫秒级，足够用。
+
 ```sql
--- 主表
+-- 单表设计，embedding 作为 BLOB 列，删物品自动删向量
 CREATE TABLE items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,                    -- AI 识别的物品名
-    description TEXT,             -- AI 生成的完整描述
-    keywords TEXT,                -- AI 提取的结构化关键词（JSON: {"颜色":"黑","物品":"盒子","位置":"床头柜"}）
-    scene TEXT,                   -- 场景描述（房间类型等）
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    keywords TEXT,                -- JSON: {"颜色":"黑","物品":"盒子"}
+    scene TEXT,                   -- 场景描述
     user_note TEXT,               -- 用户手动补充
-    latitude REAL,
-    longitude REAL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
     image_path TEXT,              -- 本地图片路径
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    embedding BLOB,               -- 512维 float32 向量
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
-
--- 向量表（sqlite-vec vec0 虚拟表）
--- Apple NL NLEmbedding 维度待运行时确定，先设占位值
-CREATE VIRTUAL TABLE item_embeddings USING vec0(
-    embedding float[512]
-);
--- embedding 行 id 与 items 表 id 对应
 ```
+
+- **GPS 优先级**：照片 EXIF > 设备当前位置 > 0,0
+- **图片存储**：Documents/MementoImages/ 目录，数据库只存文件名
+- **线程安全**：DatabaseService 内部串行队列
 
 ## 20天开发计划
 
 ### 第1周：基础搭建（Day 1-5）
 
-| 天 | 任务 | 产出 |
-|----|------|------|
-| 1 | 创建 Xcode 项目，配置 SPM 依赖（SQLiteVec），搭建目录结构，跑通 TabView | 项目骨架 |
-| 2 | DatabaseService 实现：建表、CRUD、sqlite-vec 初始化 | 数据库层完成 |
-| 3 | CameraService + ImagePicker：调用系统相机、保存图片到本地 | 能拍照存图 |
-| 4 | LocationService：CoreLocation 获取 GPS，MapHomeView 基础地图展示 | 地图能显示当前位置 |
-| 5 | 缓冲日 + 代码 Review + 修 bug | — |
+| 天 | 任务 | 产出 | 状态 |
+|----|------|------|------|
+| 1 | 创建 Xcode 项目，搭建目录结构，跑通 TabView | 项目骨架 | ✅ |
+| 2 | DatabaseService：SQLite CRUD，embedding BLOB，图片磁盘管理 | 数据库层完成 | ✅ |
+| 3 | ImagePicker：UIImagePickerController 封装，相机/相册 | 能拍照选图 | ✅ |
+| 4 | LocationService：CoreLocation，MapHomeView 地图展示 | 地图+定位 | ✅ |
+| 5 | iOS 26 Liquid Glass UI 框架搭建 | 设计系统 | ✅ |
 
 ### 第2周：核心闭环（Day 6-13）
 
-| 天 | 任务 | 产出 |
-|----|------|------|
-| 6-7 | AIService：封装 MiMo v2.5 两个调用（图片→描述、查询→关键词）；EmbeddingService：Apple NL 文本向量化 | AI 链路通 |
-| 8 | CaptureViewModel + CaptureView：拍照 → AI识别 → 预览 → 保存 | 记录物品闭环 |
-| 9 | 地图标记展示：从数据库加载物品，MapKit 标注经纬度 | 地图首页能看标记 |
-| 10 | SearchViewModel + SearchView：混合搜索（关键词解析 + 向量检索 + 融合排序） | 能搜到物品 |
-| 11 | SpeechService：语音识别集成到搜索，TTS 播报搜索结果；SettingsView：API Key 设置 | 语音闭环 + 设置 |
-| 12 | ItemDetailView：点击标记/搜索结果查看物品详情 | 详情页 |
-| 13 | 缓冲日 + 整体联调 | — |
+| 天 | 任务 | 产出 | 状态 |
+|----|------|------|------|
+| 6-7 | AIService：MiMo v2.5 图像识别；EmbeddingService：Apple NL 向量化 | AI 链路通 | ✅ |
+| 8 | CaptureViewModel + CaptureView：拍照→AI→预览→保存（照片EXIF GPS优先） | 记录物品闭环 | ✅ |
+| 9 | MapViewModel + MapHomeView：DB加载物品，地图大头针，点击详情 | 地图闭环 | ✅ |
+| 10 | SearchViewModel + SearchView：混合搜索 | 搜索 | ⬜ |
+| 11 | SpeechService：语音识别 + TTS | 语音闭环 | ⬜ |
+| 12 | ItemDetailView + ItemListView：详情页+列表页+滑动删除 | 详情+列表 | ✅ |
+| 13 | 缓冲日 + 整体联调 | — | ⬜ |
 
 ### 第3周：交互打磨 + 视频（Day 14-20）
 
@@ -247,12 +247,42 @@ CREATE VIRTUAL TABLE item_embeddings USING vec0(
 
 - [x] App 名称：**忆物 / Memento**
 - [x] 搜索策略：**混合搜索**（MiMo 关键词解析 + Apple NL 向量 + 文本匹配加权）
-- [x] API Key：用户自行在设置页填写，存入 Keychain
+- [x] API Key：用户自行在设置页填写，存入 UserDefaults（后续迁移 Keychain）
 - [x] 最低系统：**iOS 26**（Liquid Glass 设计语言）
+- [x] 向量方案：**embedding BLOB + Accelerate**（放弃 sqlite-vec，iOS 不支持动态加载 C 扩展）
+- [x] GPS 来源：**照片 EXIF 优先** → 设备位置兜底
+- [x] API 配置：**设置页预设多服务商**（MiMo/OpenAI/DeepSeek/智谱/通义千问等），选即填 URL+模型
 - [x] 无障碍：MVP 不做
 - [x] iCloud 同步：不做
-- [ ] 地图标记的视觉风格（默认 pin vs 自定义图标）
+- [x] 地图大头针视觉风格：蓝色 mappin.circle.fill + 玻璃胶囊名称标签
+- [x] 列表页：ItemCard 缩略图卡片 + 滑动删除 + 下拉刷新
 - [ ] 物品分类体系（AI 自动分类 vs 用户手动标签）
+
+## 当前实现笔记（2026-07-22）
+
+### 已完成闭环
+```
+点"+"打开菜单 → 相机/相册 → ImagePicker 提取照片EXIF GPS
+  → MiMo v2.5 图像识别 → AIResponse 解析
+  → CaptureView 预览（可编辑名称+备注）
+  → 保存：图片→磁盘 / 数据→SQLite（含embedding BLOB）/ 地图自动刷新
+```
+
+### API 配置
+- 设置页支持 8 个预设服务商，选即自动填入 API 地址和模型
+- API Key 手动填写，存 UserDefaults
+- 完全兼容 OpenAI Chat Completions 协议
+
+### 数据库
+- 单表 items，16 列含 embedding BLOB
+- DatabaseService 串行队列保证线程安全
+- 图片存 Documents/MementoImages/，数据库只记文件名
+
+### 待实现
+- 搜索功能（Day 10）
+- 语音输入/播报（Day 11）
+- Liquid Glass 动画打磨（Day 14-15）
+- 演示视频录制（Day 18-19）
 
 ## 复赛文档 & 视频要点
 

@@ -23,8 +23,14 @@ struct AIService {
     /// 分析图片中的物品，返回结构化描述
     func analyzeImage(base64Image: String, mimeType: String = "image/jpeg") async throws -> AIResponse {
         let systemPrompt = """
-        你是一个物品识别助手。分析图片中的主要物品，返回 JSON 格式的结果。
-        请仔细观察物品的名称、外观特征（颜色、形状、材质）和所在场景。
+        你是一个物品识别助手。分析图片中的主要物品，返回如下 JSON 格式（必须使用英文 key）：
+        {
+          "name": "物品名称",
+          "description": "外观特征描述（颜色、形状、材质、大小）",
+          "scene": "所在场景（房间类型、周围环境、空间关系）",
+          "keywords": {"颜色": "值", "品类": "值", "位置": "值"}
+        }
+        注意：keywords 的 key 用中文，value 用中文。name、description、scene 的 value 用中文。
         """
 
         let userContent: [[String: Any]] = [
@@ -114,14 +120,12 @@ struct AIService {
     private func parseResponse<T: Decodable>(_ data: Data) throws -> T {
         let decoder = JSONDecoder()
 
-        // 先解析外层 OpenAI 响应格式
         let outer = try decoder.decode(OpenAIResponse.self, from: data)
 
         guard let content = outer.choices.first?.message.content else {
             throw AIServiceError.emptyResponse
         }
 
-        // 解析内层 JSON（AI 返回的结构化数据）
         guard let contentData = content.data(using: .utf8) else {
             throw AIServiceError.invalidJSON
         }
