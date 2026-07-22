@@ -133,6 +133,22 @@ struct CaptureView: View {
                         .glassEffect(.clear, in: .rect(cornerRadius: 16))
                 }
 
+                // AI 推荐图标
+                if let emoji = response.emoji {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AI 推荐图标").font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Text(emoji)
+                                .font(.largeTitle)
+                                .frame(width: 48, height: 48)
+                                .glassEffect(.regular, in: .circle)
+                            Text("保存后可在地图详情页更换")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 // 物品名称（可编辑）
                 VStack(alignment: .leading, spacing: 4) {
                     Text("物品名称").font(.caption).foregroundStyle(.secondary)

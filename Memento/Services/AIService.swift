@@ -28,9 +28,11 @@ struct AIService {
           "name": "物品名称",
           "description": "外观特征描述（颜色、形状、材质、大小）",
           "scene": "所在场景（房间类型、周围环境、空间关系）",
-          "keywords": {"颜色": "值", "品类": "值", "位置": "值"}
+          "keywords": {"颜色": "值", "品类": "值", "位置": "值"},
+          "emoji": "最贴切的单个 emoji（如 📱、🔑、👟、💊、📦、💻、👕、🎧、💍、👜、📷、📚、🧸、⌚、🕶️、💄 等）"
         }
-        注意：keywords 的 key 用中文，value 用中文。name、description、scene 的 value 用中文。
+        注意：keywords 的 key 用中文，value 用中文。name、description、scene、emoji 的 value 用中文/emoji。
+        emoji 必须是一个最能代表该物品的 emoji 字符。
         """
 
         let userContent: [[String: Any]] = [

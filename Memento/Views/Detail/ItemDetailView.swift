@@ -7,9 +7,28 @@
 
 import SwiftUI
 
+// MARK: - Emoji 分组
+
+private let emojiGroups: [(String, [String])] = [
+    ("常用", ["📍", "📦", "🔑", "📱", "💻", "👕", "👟", "📚", "💊", "🎧", "💍", "👜"]),
+    ("物品", ["📷", "🔦", "💳", "🕶️", "🧸", "📝", "🎮", "⌚", "🔋", "💿", "🎸", "🖊️"]),
+    ("标记", ["❤️", "⭐", "🔶", "💎", "🎯", "🔔", "💡", "🏠", "🚗", "🌈", "🔥", "🧲"]),
+]
+
+// MARK: - ItemDetailView
+
 struct ItemDetailView: View {
     let item: Item
+    var onUpdate: (() -> Void)?
+
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedEmoji: String
+
+    init(item: Item, onUpdate: (() -> Void)? = nil) {
+        self.item = item
+        self.onUpdate = onUpdate
+        _selectedEmoji = State(initialValue: item.emoji ?? "📍")
+    }
 
     var body: some View {
         NavigationStack {
@@ -26,6 +45,9 @@ struct ItemDetailView: View {
                             .frame(maxHeight: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
+
+                    // 图标选择
+                    emojiPickerSection
 
                     // 物品名称
                     VStack(alignment: .leading, spacing: 4) {
@@ -71,6 +93,61 @@ struct ItemDetailView: View {
                     Button("关闭") { dismiss() }
                 }
             }
+        }
+    }
+
+    // MARK: - Emoji Picker
+
+    private var emojiPickerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("图标").font(.caption).foregroundStyle(.secondary)
+
+            ForEach(emojiGroups, id: \.0) { group in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(group.0).font(.caption2).foregroundStyle(.tertiary)
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8),
+                        spacing: 6
+                    ) {
+                        ForEach(group.1, id: \.self) { emoji in
+                            Button {
+                                selectedEmoji = emoji
+                                saveEmoji(emoji)
+                            } label: {
+                                Text(emoji)
+                                    .font(.title3)
+                                    .frame(width: 38, height: 38)
+                                    .background(
+                                        selectedEmoji == emoji
+                                            ? Color.blue.opacity(0.15)
+                                            : Color.clear
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(
+                                                selectedEmoji == emoji ? Color.blue.opacity(0.4) : Color.clear,
+                                                lineWidth: 1.5
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Save
+
+    private func saveEmoji(_ emoji: String) {
+        guard let id = item.id else { return }
+        do {
+            try DatabaseService.shared.updateEmoji(id: id, emoji: emoji)
+            onUpdate?()
+        } catch {
+            print("[ItemDetailView] 更新图标失败: \(error)")
         }
     }
 }

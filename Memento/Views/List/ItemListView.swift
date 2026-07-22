@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct ItemListView: View {
+    var onDataChanged: (() -> Void)?
+
     @State private var items: [Item] = []
     @State private var selectedItem: Item?
     @State private var showDetail = false
@@ -89,6 +91,7 @@ struct ItemListView: View {
         do {
             try dbService.delete(id: id)
             items.removeAll { $0.id == id }
+            onDataChanged?()
         } catch {
             print("[ItemListView] 删除失败: \(error)")
         }

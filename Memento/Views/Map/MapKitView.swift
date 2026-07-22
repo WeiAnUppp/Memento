@@ -4,6 +4,7 @@
 //
 //  UIViewRepresentable 包裹 MKMapView
 //  大头针拖拽通过 UIKit 手势识别器实现，不依赖 MKAnnotationView.isDraggable
+//  缩放到一定级别自动聚类（原生 MKAnnotationView clusteringIdentifier）
 //
 
 import SwiftUI
@@ -14,6 +15,7 @@ import MapKit
 final class ItemPoint: NSObject, MKAnnotation {
     let itemId: Int64
     let itemName: String
+    var emoji: String
     dynamic var coordinate: CLLocationCoordinate2D
 
     var title: String? { itemName }
@@ -21,6 +23,7 @@ final class ItemPoint: NSObject, MKAnnotation {
     init(item: Item) {
         self.itemId = item.id ?? 0
         self.itemName = item.name
+        self.emoji = item.emoji ?? "📍"
         self.coordinate = item.coordinate
     }
 }
@@ -45,7 +48,10 @@ struct MapKitView: UIViewRepresentable {
         mapView.showsScale = false
         mapView.isPitchEnabled = false
         mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        // 注册单物品 pin 和聚合 cluster 两种样式
         mapView.register(MKAnnotationView.self, forAnnotationViewWithReuseIdentifier: "Pin")
+        mapView.register(MKMarkerAnnotationView.self, forAnnotationViewWithReuseIdentifier: "Cluster")
 
         context.coordinator.mapView = mapView
         return mapView
@@ -113,17 +119,58 @@ struct MapKitView: UIViewRepresentable {
 
             for item in items {
                 guard let id = item.id, id != movingId, let point = annotationMap[id] else { continue }
+
                 let newCoord = item.coordinate
                 if abs(point.coordinate.latitude - newCoord.latitude) > 0.000001 ||
                    abs(point.coordinate.longitude - newCoord.longitude) > 0.000001 {
                     point.coordinate = newCoord
                 }
+
+                let itemEmoji = item.emoji ?? "📍"
+                if point.emoji != itemEmoji, let view = mapView.view(for: point) {
+                    point.emoji = itemEmoji
+                    view.image = pinImage(emoji: itemEmoji)
+                }
             }
         }
 
-        // MARK: Annotation View（添加 UIKit 手势）
+        // MARK: Pin Image
+
+        private func pinImage(emoji: String, dragging: Bool = false) -> UIImage {
+            let size: CGFloat = 40
+            return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
+                let bgColor: UIColor = dragging ? .systemOrange : .systemBlue
+                bgColor.setFill()
+                let circleRect = CGRect(x: 2, y: 2, width: size - 4, height: size - 4)
+                ctx.cgContext.fillEllipse(in: circleRect)
+
+                let fontSize: CGFloat = 20
+                let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: fontSize)]
+                let emojiStr = emoji as NSString
+                let stringSize = emojiStr.size(withAttributes: attrs)
+                let x = (size - stringSize.width) / 2
+                let y = (size - stringSize.height) / 2
+                emojiStr.draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
+            }
+        }
+
+        // MARK: Annotation View（单物品 emoji pin + cluster 聚合）
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            // --- 聚合 cluster ---
+            if let cluster = annotation as? MKClusterAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(
+                    withIdentifier: "Cluster", for: cluster
+                ) as! MKMarkerAnnotationView
+                view.markerTintColor = .systemBlue
+                view.glyphText = "\(cluster.memberAnnotations.count)"
+                view.displayPriority = .defaultHigh
+                view.canShowCallout = false
+                view.titleVisibility = .hidden
+                return view
+            }
+
+            // --- 单个物品 ---
             guard let point = annotation as? ItemPoint else { return nil }
 
             let view = mapView.dequeueReusableAnnotationView(
@@ -132,32 +179,25 @@ struct MapKitView: UIViewRepresentable {
 
             view.annotation = point
             view.canShowCallout = false
-            view.isDraggable = false   // 不用系统拖拽
+            view.isDraggable = false
             view.isEnabled = true
+            view.clusteringIdentifier = "item"   // ← 启用原生聚类
 
-            // 蓝色圆形 pin
-            let size: CGFloat = 32
-            let image = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
-                UIColor.systemBlue.setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: size - 4, height: size - 4))
-            }
-            view.image = image
+            view.image = pinImage(emoji: point.emoji)
+            let size: CGFloat = 40
             view.frame.size = CGSize(width: size, height: size)
             view.centerOffset = CGPoint(x: 0, y: -size / 2)
 
-            // 每次复用都要重建手势（避免残留状态）
+            // 每次复用重建手势
             view.gestureRecognizers?.removeAll()
 
-            // Tap → 详情
             let tap = UITapGestureRecognizer(target: self, action: #selector(handlePinTap(_:)))
             view.addGestureRecognizer(tap)
 
-            // Long press → 拖拽
             let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handlePinLongPress(_:)))
             longPress.minimumPressDuration = 0.15
             view.addGestureRecognizer(longPress)
 
-            // 短按需等长按失败后才触发
             tap.require(toFail: longPress)
 
             return view
@@ -171,7 +211,7 @@ struct MapKitView: UIViewRepresentable {
             onTapItem?(point.itemId)
         }
 
-        // MARK: - Long Press → 拖拽（UIKit 手势，不受 MapKit 拦截）
+        // MARK: - Long Press → 拖拽
 
         @objc private func handlePinLongPress(_ gesture: UILongPressGestureRecognizer) {
             guard let mapView = mapView,
@@ -183,7 +223,6 @@ struct MapKitView: UIViewRepresentable {
             switch gesture.state {
             case .began:
                 draggingItemId = point.itemId
-                // 计算手指与大头针中心之间的偏移
                 let pinScreenPoint = mapView.convert(point.coordinate, toPointTo: mapView)
                 dragTouchOffset = CGPoint(
                     x: pinScreenPoint.x - touchPoint.x,
@@ -191,13 +230,7 @@ struct MapKitView: UIViewRepresentable {
                 )
                 onMoveStarted?(point.itemId)
 
-                // 视觉反馈
-                let size: CGFloat = 32
-                let orangeImage = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
-                    UIColor.systemOrange.setFill()
-                    ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
-                }
-                pinView.image = orangeImage
+                pinView.image = pinImage(emoji: point.emoji, dragging: true)
                 UIView.animate(withDuration: 0.15) {
                     pinView.transform = CGAffineTransform(scaleX: 1.3, y: 1.3)
                 }
@@ -227,18 +260,14 @@ struct MapKitView: UIViewRepresentable {
         }
 
         private func resetPinView(_ view: MKAnnotationView) {
-            let size: CGFloat = 32
-            let blueImage = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
-                UIColor.systemBlue.setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: size - 4, height: size - 4))
-            }
-            view.image = blueImage
+            guard let point = view.annotation as? ItemPoint else { return }
+            view.image = pinImage(emoji: point.emoji, dragging: false)
             UIView.animate(withDuration: 0.2) {
                 view.transform = .identity
             }
         }
 
-        // MARK: didSelect（不再使用，防止干扰）
+        // MARK: didSelect
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             mapView.deselectAnnotation(view.annotation, animated: false)
         }

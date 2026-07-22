@@ -198,8 +198,10 @@ struct ContentView: View {
                 .allowsHitTesting(selectedPage == .map)
 
             if selectedPage == .list {
-                ItemListView()
-                    .padding(.top, 66)
+                ItemListView(onDataChanged: {
+                    mapViewModel.loadItems()
+                })
+                .padding(.top, 66)
             }
 
             if selectedPage == .settings {

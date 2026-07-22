@@ -85,6 +85,7 @@ final class CaptureViewModel {
             userNote: userNote.isEmpty ? nil : userNote,
             latitude: lat,
             longitude: lon,
+            emoji: response.emoji,
             imagePath: imagePath,
             createdAt: Date(),
             updatedAt: Date()

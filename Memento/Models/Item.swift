@@ -17,6 +17,7 @@ struct Item: Identifiable, Codable, Equatable {
     var userNote: String?
     var latitude: Double
     var longitude: Double
+    var emoji: String?
     var imagePath: String?
     var createdAt: Date
     var updatedAt: Date

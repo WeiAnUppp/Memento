@@ -61,7 +61,14 @@ struct MapHomeView: View {
         }
         .sheet(isPresented: $showDetail) {
             if let item = viewModel.selectedItem {
-                ItemDetailView(item: item)
+                ItemDetailView(item: item, onUpdate: {
+                    viewModel.loadItems()
+                    // 刷新 selectedItem 以反映 emoji 变更
+                    if let id = item.id,
+                       let updated = viewModel.items.first(where: { $0.id == id }) {
+                        viewModel.selectedItem = updated
+                    }
+                })
             }
         }
         .onAppear {

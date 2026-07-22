@@ -75,6 +75,7 @@ final class DatabaseService {
             latitude REAL NOT NULL,
             longitude REAL NOT NULL,
             image_path TEXT,
+            emoji TEXT,
             embedding BLOB,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -91,6 +92,18 @@ final class DatabaseService {
         if sqlite3_step(statement) != SQLITE_DONE {
             print("[DatabaseService] 建表执行失败: \(errmsg())")
         }
+
+        // 迁移：为旧表添加 emoji 列
+        migrateAddEmoji()
+    }
+
+    private func migrateAddEmoji() {
+        let sql = "ALTER TABLE items ADD COLUMN emoji TEXT;"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
     }
 
     // MARK: - Date Helpers
@@ -166,9 +179,10 @@ final class DatabaseService {
         let lat = sqlite3_column_double(stmt, 6)
         let lon = sqlite3_column_double(stmt, 7)
         let imagePath = columnText(stmt, 8)
+        let emoji = columnText(stmt, 9)
 
-        let createdAtStr = String(cString: sqlite3_column_text(stmt, 9))
-        let updatedAtStr = String(cString: sqlite3_column_text(stmt, 10))
+        let createdAtStr = String(cString: sqlite3_column_text(stmt, 10))
+        let updatedAtStr = String(cString: sqlite3_column_text(stmt, 11))
 
         return Item(
             id: id,
@@ -179,6 +193,7 @@ final class DatabaseService {
             userNote: userNote,
             latitude: lat,
             longitude: lon,
+            emoji: emoji,
             imagePath: imagePath,
             createdAt: parseDate(createdAtStr) ?? Date(),
             updatedAt: parseDate(updatedAtStr) ?? Date()
@@ -192,9 +207,9 @@ final class DatabaseService {
         return try queue.sync {
             let sql = """
             INSERT INTO items (name, description, keywords, scene, user_note,
-                               latitude, longitude, image_path, embedding,
+                               latitude, longitude, image_path, emoji, embedding,
                                created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
             var stmt: OpaquePointer?
@@ -213,9 +228,10 @@ final class DatabaseService {
             sqlite3_bind_double(stmt, 6, item.latitude)
             sqlite3_bind_double(stmt, 7, item.longitude)
             bindOptionalText(stmt, 8, item.imagePath)
-            bindEmbedding(stmt, 9, embedding)
-            bindText(stmt, 10, now)
+            bindOptionalText(stmt, 9, item.emoji)
+            bindEmbedding(stmt, 10, embedding)
             bindText(stmt, 11, now)
+            bindText(stmt, 12, now)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw DatabaseError.insertFailed(errmsg())
@@ -229,7 +245,7 @@ final class DatabaseService {
         return try queue.sync {
             let sql = """
             SELECT id, name, description, keywords, scene, user_note,
-                   latitude, longitude, image_path, created_at, updated_at
+                   latitude, longitude, image_path, emoji, created_at, updated_at
             FROM items ORDER BY created_at DESC;
             """
 
@@ -253,7 +269,7 @@ final class DatabaseService {
         return try queue.sync {
             let sql = """
             SELECT id, name, description, keywords, scene, user_note,
-                   latitude, longitude, image_path, created_at, updated_at
+                   latitude, longitude, image_path, emoji, created_at, updated_at
             FROM items WHERE id = ?;
             """
 
@@ -277,7 +293,7 @@ final class DatabaseService {
 
             let sql = """
             UPDATE items SET name=?, description=?, keywords=?, scene=?,
-                   user_note=?, latitude=?, longitude=?, image_path=?,
+                   user_note=?, latitude=?, longitude=?, image_path=?, emoji=?,
                    updated_at=?
             WHERE id=?;
             """
@@ -296,8 +312,9 @@ final class DatabaseService {
             sqlite3_bind_double(stmt, 6, item.latitude)
             sqlite3_bind_double(stmt, 7, item.longitude)
             bindOptionalText(stmt, 8, item.imagePath)
-            bindText(stmt, 9, formatDate(Date()))
-            sqlite3_bind_int64(stmt, 10, id)
+            bindOptionalText(stmt, 9, item.emoji)
+            bindText(stmt, 10, formatDate(Date()))
+            sqlite3_bind_int64(stmt, 11, id)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw DatabaseError.updateFailed(errmsg())
@@ -319,6 +336,26 @@ final class DatabaseService {
             sqlite3_bind_double(stmt, 2, longitude)
             bindText(stmt, 3, formatDate(Date()))
             sqlite3_bind_int64(stmt, 4, id)
+
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+        }
+    }
+
+    /// 仅更新图标 emoji
+    func updateEmoji(id: Int64, emoji: String) throws {
+        try queue.sync {
+            let sql = "UPDATE items SET emoji=?, updated_at=? WHERE id=?;"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            bindText(stmt, 1, emoji)
+            bindText(stmt, 2, formatDate(Date()))
+            sqlite3_bind_int64(stmt, 3, id)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw DatabaseError.updateFailed(errmsg())

@@ -12,6 +12,7 @@ struct AIResponse: Codable, Equatable {
     let description: String
     let scene: String
     let keywords: [String: String]
+    let emoji: String?
 }
 
 struct SearchQuery: Codable {
