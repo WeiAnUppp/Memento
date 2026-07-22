@@ -264,7 +264,7 @@ struct CameraHalfView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
             .tint(.primary)
@@ -278,13 +278,13 @@ struct CameraHalfView: View {
             } label: {
                 Image(systemName: camera.flashMode.icon)
                     .font(.system(size: 18))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
-            .tint(camera.flashMode == .off ? .secondary : .yellow)
+            .tint(camera.flashMode == .off ? Color.secondary : Color.yellow)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
     }
 
     // MARK: - Shutter Button
@@ -295,13 +295,15 @@ struct CameraHalfView: View {
         } label: {
             ZStack {
                 Circle()
-                    .stroke(.white, lineWidth: 4)
-                    .frame(width: 60, height: 60)
+                    .stroke(.white, lineWidth: 5)
+                    .frame(width: 68, height: 68)
                 Circle()
                     .fill(.white)
-                    .frame(width: 50, height: 50)
+                    .frame(width: 54, height: 54)
             }
+            .frame(width: 68, height: 68)
         }
+        .glassEffect(.regular.interactive(), in: .circle)
         .scaleEffect(captureScale)
         .disabled(!camera.isSessionReady)
     }

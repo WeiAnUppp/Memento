@@ -28,15 +28,15 @@ enum AppPage: String, CaseIterable {
 struct ContentView: View {
     @State private var selectedPage: AppPage = .map
     @State private var showSearch = false
-    @State private var showCapture = false
-    @State private var captureSourceType: UIImagePickerController.SourceType = .photoLibrary
     @State private var settingsNavigationDepth = 0
 
     /// 半屏相机
     @State private var showCameraSheet = false
-    /// 相机拍完后，待 AI 处理的图片
-    @State private var pendingCameraImage: UIImage?
-    /// 拍照后展示 AI 处理流程
+    /// 半屏照片选择器
+    @State private var showPhotoSheet = false
+    /// 选图 / 拍照后，待 AI 处理的图片
+    @State private var pendingImage: UIImage?
+    /// 选图 / 拍照后展示 AI 处理流程
     @State private var showProcessingSheet = false
 
     /// 地图需要知道何时刷新（拍照保存后）
@@ -78,34 +78,38 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
         }
-        // 照片：全屏 CaptureView（原有逻辑）
-        .fullScreenCover(isPresented: $showCapture) {
-            CaptureView(sourceType: captureSourceType) {
-                showCapture = false
-                mapRefreshID += 1
-            }
-        }
         // 相机：半屏取景器
         .sheet(isPresented: $showCameraSheet) {
             CameraHalfView { image in
-                pendingCameraImage = image
+                pendingImage = image
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.fraction(0.65)])
             .presentationDragIndicator(.hidden)
         }
-        // 拍照完成后 → AI 处理流程
+        // 照片：半屏选图器（可展开全屏）
+        .sheet(isPresented: $showPhotoSheet) {
+            PhotoHalfView { image in
+                pendingImage = image
+            }
+            .presentationDragIndicator(.hidden)
+        }
+        // 拍照/选图后 → AI 处理
         .sheet(isPresented: $showProcessingSheet) {
-            if let image = pendingCameraImage {
+            if let image = pendingImage {
                 CaptureView(preselectedImage: image) {
                     showProcessingSheet = false
-                    pendingCameraImage = nil
+                    pendingImage = nil
                     mapRefreshID += 1
                 }
             }
         }
-        // 半屏相机关闭后，自动进入 AI 处理
         .onChange(of: showCameraSheet) { _, showing in
-            if !showing, pendingCameraImage != nil {
+            if !showing, pendingImage != nil {
+                showProcessingSheet = true
+            }
+        }
+        .onChange(of: showPhotoSheet) { _, showing in
+            if !showing, pendingImage != nil {
                 showProcessingSheet = true
             }
         }
@@ -162,8 +166,7 @@ struct ContentView: View {
 
             Menu {
                 Button {
-                    captureSourceType = .photoLibrary
-                    showCapture = true
+                    showPhotoSheet = true
                 } label: {
                     Label("照片", systemImage: "photo.on.rectangle")
                 }
