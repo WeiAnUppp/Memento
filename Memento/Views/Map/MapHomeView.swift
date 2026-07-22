@@ -9,8 +9,8 @@ import SwiftUI
 import MapKit
 
 struct MapHomeView: View {
-    @State private var viewModel = MapViewModel()
-    @State private var locationService = LocationService()
+    @Bindable var viewModel: MapViewModel
+    let locationService: LocationService
     @State private var showDetail = false
 
     var body: some View {
@@ -28,6 +28,7 @@ struct MapHomeView: View {
             }
         }
         .mapStyle(.standard)
+        .mapControls {}   // 隐藏默认控件（比例尺、指南针等）
         .ignoresSafeArea(edges: .top)
         .overlay(alignment: .topTrailing) {
             Button {
@@ -53,11 +54,14 @@ struct MapHomeView: View {
             viewModel.loadItems()
         }
         .task {
+            // 仅在首次启动时居中到用户位置，避免每次切回地图都重新跳转
+            guard !viewModel.hasInitialCentered else { return }
             while locationService.currentLocation == nil {
                 try? await Task.sleep(for: .milliseconds(200))
             }
             guard let location = locationService.currentLocation else { return }
             viewModel.centerOnUser(location.coordinate)
+            viewModel.hasInitialCentered = true
         }
     }
 }

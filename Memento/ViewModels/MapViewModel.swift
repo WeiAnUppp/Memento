@@ -15,6 +15,9 @@ final class MapViewModel {
     var isLoading = false
     var loadError: String?
 
+    /// 是否已完成首次定位居中（避免每次切回地图都重新居中）
+    var hasInitialCentered = false
+
     var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),

@@ -39,8 +39,9 @@ struct ContentView: View {
     /// 选图 / 拍照后展示 AI 处理流程
     @State private var showProcessingSheet = false
 
-    /// 地图需要知道何时刷新（拍照保存后）
-    @State private var mapRefreshID = 0
+    /// 地图共享状态 —— 提升到 ContentView，页面切换时 cameraPosition / items 不丢失
+    @State private var mapViewModel = MapViewModel()
+    @State private var locationService = LocationService()
 
     /// 设置页使用原生大标题导航栏，不需要自定义顶栏
     private var showCustomTopBar: Bool {
@@ -99,7 +100,7 @@ struct ContentView: View {
                 CaptureView(preselectedImage: image) {
                     showProcessingSheet = false
                     pendingImage = nil
-                    mapRefreshID += 1
+                    mapViewModel.loadItems()
                 }
             }
         }
@@ -190,20 +191,23 @@ struct ContentView: View {
 
     @ViewBuilder
     private var pageContent: some View {
-        switch selectedPage {
-        case .map:
-            MapHomeView()
-                .id(mapRefreshID)
+        ZStack {
+            // 地图始终保持在视图树中，切换页面时位置/缩放不丢失
+            MapHomeView(viewModel: mapViewModel, locationService: locationService)
+                .opacity(selectedPage == .map ? 1 : 0)
+                .allowsHitTesting(selectedPage == .map)
 
-        case .list:
-            ItemListView()
-                .padding(.top, 66)
+            if selectedPage == .list {
+                ItemListView()
+                    .padding(.top, 66)
+            }
 
-        case .settings:
-            SettingsView(
-                selectedPage: $selectedPage,
-                navigationDepth: $settingsNavigationDepth
-            )
+            if selectedPage == .settings {
+                SettingsView(
+                    selectedPage: $selectedPage,
+                    navigationDepth: $settingsNavigationDepth
+                )
+            }
         }
     }
 }
