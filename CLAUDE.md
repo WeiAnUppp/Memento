@@ -263,20 +263,36 @@ CREATE TABLE items (
 ### 已完成闭环
 ```
 点"+"打开菜单 → 相机/相册 → ImagePicker 提取照片EXIF GPS
-  → MiMo v2.5 图像识别 → AIResponse 解析
-  → CaptureView 预览（可编辑名称+备注）
-  → 保存：图片→磁盘 / 数据→SQLite（含embedding BLOB）/ 地图自动刷新
+  → MiMo v2.5 图像识别 → AIResponse 解析（含 emoji 推荐）
+  → CaptureView 预览（可编辑名称+备注，展示 AI 推荐 emoji）
+  → 保存：图片→磁盘 / 数据→SQLite（含embedding BLOB + emoji）/ 地图自动刷新
 ```
 
-### API 配置
-- 设置页支持 8 个预设服务商，选即自动填入 API 地址和模型
-- API Key 手动填写，存 UserDefaults
-- 完全兼容 OpenAI Chat Completions 协议
+### 地图 & 大头针
+- **MapKitView**：`UIViewRepresentable` 包裹 `MKMapView`（非 SwiftUI Map），原因：
+  - SwiftUI Map 的 `Annotation` 手势被 MapKit 底层拦截，无法实现拖拽
+  - MKMapView 的 annotation views 是独立 UIView，可自由添加 UIKit 手势
+- **拖拽移动**：`UILongPressGestureRecognizer`（0.15s）+ 坐标转换 → 松手写库更新 GPS
+- **点击详情**：`UITapGestureRecognizer`，「tap.require(toFail: longPress)」防止拖拽误触
+- **Emoji 图标**：详情页 3 组 36 个 emoji 可选，「圆形蓝色底 + emoji」，拖拽时变橙色
+- **原生聚类**：`clusteringIdentifier = "item"`，缩到一定级别自动聚合成数字圆圈
+- **页面切换**：`ZStack + opacity` 保持视图存活，地图位置/缩放不丢失
+- 隐藏比例尺/指南针、用户定位按钮、首次自动居中
+
+### AI 集成
+- 图片识别 prompt 增加 emoji 推荐字段，保存时自动写入 Item
+- API 响应模型 `AIResponse` 含 `emoji: String?`
+- 设置页支持 8 个预设服务商，完全兼容 OpenAI Chat Completions 协议
 
 ### 数据库
-- 单表 items，16 列含 embedding BLOB
+- 单表 items，含 emoji TEXT 列（旧表自动 ALTER TABLE 迁移）
+- `updateLocation` / `updateEmoji` 专用更新方法
 - DatabaseService 串行队列保证线程安全
 - 图片存 Documents/MementoImages/，数据库只记文件名
+
+### 列表页
+- ItemCard 缩略图卡片 + 滑动删除 + 下拉刷新
+- 删除后回调 `onDataChanged` → 地图实时刷新
 
 ### 待实现
 - 搜索功能（Day 10）
