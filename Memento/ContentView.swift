@@ -55,11 +55,12 @@ struct ContentView: View {
                 }
             }
 
-            if showBottomBar {
-                bottomNavBar
-                    .padding(.horizontal, 23)
-                    .padding(.bottom, 18)
-            }
+            bottomNavBar
+                .padding(.horizontal, 23)
+                .padding(.bottom, 18)
+                .offset(y: showBottomBar ? 0 : 80)
+                .opacity(showBottomBar ? 1 : 0)
+                .animation(.smooth(duration: 0.35), value: showBottomBar)
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
