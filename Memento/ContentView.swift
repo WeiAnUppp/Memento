@@ -27,45 +27,51 @@ enum AppPage: String, CaseIterable {
 
 struct ContentView: View {
     @State private var selectedPage: AppPage = .map
-    @State private var showCapture = false
     @State private var showSearch = false
+    @State private var settingsNavigationDepth = 0
+
+    /// 设置页使用原生大标题导航栏，不需要自定义顶栏
+    private var showCustomTopBar: Bool {
+        selectedPage != .settings
+    }
+
+    /// 底部搜索栏：设置页子页面隐藏，其他始终显示
+    private var showBottomBar: Bool {
+        if selectedPage == .settings && settingsNavigationDepth > 0 {
+            return false
+        }
+        return true
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // 页面内容（全屏）
             pageContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 顶部浮层
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
+            if showCustomTopBar {
+                VStack(spacing: 0) {
+                    customTopBar
+                    Spacer()
+                }
             }
 
-            // 底部导航栏 【 +  搜索  🎤 】
-            bottomNavBar
-                .padding(.horizontal, 23)
-                .padding(.bottom, 18)
+            if showBottomBar {
+                bottomNavBar
+                    .padding(.horizontal, 23)
+                    .padding(.bottom, 18)
+            }
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
         }
     }
 
-    // MARK: - Top Bar
+    // MARK: - Custom Top Bar（地图、列表）
 
-    private var topBar: some View {
+    private var customTopBar: some View {
         HStack(alignment: .center) {
-            // 非地图页面：左上角标题
-            if selectedPage != .map {
-                Text(selectedPage.rawValue)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            }
-
             Spacer()
 
-            // 筛选菜单 — iOS 26 Messages 风格
             Menu {
                 Picker("视图", selection: $selectedPage) {
                     ForEach(AppPage.allCases, id: \.self) { page in
@@ -82,15 +88,14 @@ struct ContentView: View {
             .tint(.primary)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 0)
     }
 
-    // MARK: - Bottom Nav Bar 【 🔍 搜索  🎤 】【 + 】
+    // MARK: - Bottom Nav Bar
 
     private var bottomNavBar: some View {
         HStack(spacing: 8) {
-            // 搜索栏（含麦克风）
             Button {
                 showSearch = true
             } label: {
@@ -110,16 +115,11 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .tint(.primary)
 
-            // ⊕ 加号菜单
             Menu {
-                Button {
-                    // TODO: 打开相册
-                } label: {
+                Button { } label: {
                     Label("照片", systemImage: "photo.on.rectangle")
                 }
-                Button {
-                    // TODO: 打开相机
-                } label: {
+                Button { } label: {
                     Label("相机", systemImage: "camera.fill")
                 }
             } label: {
@@ -135,20 +135,21 @@ struct ContentView: View {
 
     // MARK: - Page Content
 
-    /// 顶部栏高度，用于非地图页面顶部留白
-    private var topBarHeight: CGFloat { 66 }
-
     @ViewBuilder
     private var pageContent: some View {
         switch selectedPage {
         case .map:
             MapHomeView()
+
         case .list:
             ItemListView()
-                .padding(.top, topBarHeight)
+                .padding(.top, 66)
+
         case .settings:
-            SettingsView()
-                .padding(.top, topBarHeight)
+            SettingsView(
+                selectedPage: $selectedPage,
+                navigationDepth: $settingsNavigationDepth
+            )
         }
     }
 }
@@ -180,9 +181,7 @@ private struct SearchModalView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") {
-                        dismiss()
-                    }
+                    Button("关闭") { dismiss() }
                 }
             }
         }
