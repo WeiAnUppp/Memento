@@ -86,42 +86,46 @@ struct ContentView: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - Bottom Nav Bar 【 +  搜索  🎤 】
+    // MARK: - Bottom Nav Bar 【 🔍 搜索  🎤 】【 + 】
 
     private var bottomNavBar: some View {
         HStack(spacing: 8) {
-            // ⊕ 加号按钮
-            Button {
-                showCapture = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .frame(width: 50, height: 50)
-            }
-            .glassEffect(.regular.interactive(), in: .circle)
-            .tint(.primary)
-
-            // 搜索栏
+            // 搜索栏（含麦克风）
             Button {
                 showSearch = true
             } label: {
-                Label("搜索物品...", systemImage: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .frame(height: 50)
-                    .glassEffect(.regular, in: .capsule)
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.primary)
+                    Text("搜索物品...")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "mic.fill")
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 50)
+                .glassEffect(.regular, in: .capsule)
             }
             .buttonStyle(.plain)
             .tint(.primary)
 
-            // 语音按钮
-            Button {
-                // TODO: Day 11 — 语音输入
+            // ⊕ 加号菜单
+            Menu {
+                Button {
+                    // TODO: 打开相册
+                } label: {
+                    Label("照片", systemImage: "photo.on.rectangle")
+                }
+                Button {
+                    // TODO: 打开相机
+                } label: {
+                    Label("相机", systemImage: "camera.fill")
+                }
             } label: {
-                Image(systemName: "mic.fill")
+                Image(systemName: "plus")
                     .font(.title3)
+                    .fontWeight(.medium)
                     .frame(width: 50, height: 50)
             }
             .glassEffect(.regular.interactive(), in: .circle)
