@@ -32,6 +32,13 @@ struct ContentView: View {
     @State private var captureSourceType: UIImagePickerController.SourceType = .photoLibrary
     @State private var settingsNavigationDepth = 0
 
+    /// 半屏相机
+    @State private var showCameraSheet = false
+    /// 相机拍完后，待 AI 处理的图片
+    @State private var pendingCameraImage: UIImage?
+    /// 拍照后展示 AI 处理流程
+    @State private var showProcessingSheet = false
+
     /// 地图需要知道何时刷新（拍照保存后）
     @State private var mapRefreshID = 0
 
@@ -66,14 +73,40 @@ struct ContentView: View {
                 .offset(y: showBottomBar ? 0 : 80)
                 .opacity(showBottomBar ? 1 : 0)
                 .animation(.smooth(duration: 0.35), value: showBottomBar)
+                .zIndex(1)
         }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
         }
+        // 照片：全屏 CaptureView（原有逻辑）
         .fullScreenCover(isPresented: $showCapture) {
             CaptureView(sourceType: captureSourceType) {
                 showCapture = false
                 mapRefreshID += 1
+            }
+        }
+        // 相机：半屏取景器
+        .sheet(isPresented: $showCameraSheet) {
+            CameraHalfView { image in
+                pendingCameraImage = image
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.hidden)
+        }
+        // 拍照完成后 → AI 处理流程
+        .sheet(isPresented: $showProcessingSheet) {
+            if let image = pendingCameraImage {
+                CaptureView(preselectedImage: image) {
+                    showProcessingSheet = false
+                    pendingCameraImage = nil
+                    mapRefreshID += 1
+                }
+            }
+        }
+        // 半屏相机关闭后，自动进入 AI 处理
+        .onChange(of: showCameraSheet) { _, showing in
+            if !showing, pendingCameraImage != nil {
+                showProcessingSheet = true
             }
         }
     }
@@ -129,16 +162,15 @@ struct ContentView: View {
 
             Menu {
                 Button {
-                    captureSourceType = .camera
-                    showCapture = true
-                } label: {
-                    Label("相机", systemImage: "camera.fill")
-                }
-                Button {
                     captureSourceType = .photoLibrary
                     showCapture = true
                 } label: {
                     Label("照片", systemImage: "photo.on.rectangle")
+                }
+                Button {
+                    showCameraSheet = true
+                } label: {
+                    Label("相机", systemImage: "camera.fill")
                 }
             } label: {
                 Image(systemName: "plus")

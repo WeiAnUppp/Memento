@@ -6,18 +6,37 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Capture Flow View
 
 /// 完整的拍照记录流程：
 /// 外部通过 Menu 选择相机/照片 → 直接打开 → AI 分析 → 预览确认 → 保存
 struct CaptureView: View {
-    let sourceType: UIImagePickerController.SourceType
+    let sourceType: UIImagePickerController.SourceType?
+    let preselectedImage: UIImage?
+    let preselectedGPS: CLLocationCoordinate2D?
 
     @State private var viewModel = CaptureViewModel()
     @State private var showImagePicker = true
 
     let onDismiss: () -> Void
+
+    /// 从系统相册选图（原有流程）
+    init(sourceType: UIImagePickerController.SourceType, onDismiss: @escaping () -> Void) {
+        self.sourceType = sourceType
+        self.preselectedImage = nil
+        self.preselectedGPS = nil
+        self.onDismiss = onDismiss
+    }
+
+    /// 半屏相机已拍好照片，直接进入 AI 分析
+    init(preselectedImage: UIImage, onDismiss: @escaping () -> Void) {
+        self.sourceType = nil
+        self.preselectedImage = preselectedImage
+        self.preselectedGPS = nil
+        self.onDismiss = onDismiss
+    }
 
     var body: some View {
         NavigationStack {
@@ -47,8 +66,16 @@ struct CaptureView: View {
             }
         }
         .sheet(isPresented: $showImagePicker) {
-            ImagePicker(sourceType: sourceType) { image, gps in
-                viewModel.didSelectImage(image, gps: gps)
+            if let sourceType {
+                ImagePicker(sourceType: sourceType) { image, gps in
+                    viewModel.didSelectImage(image, gps: gps)
+                }
+            }
+        }
+        .onAppear {
+            if let image = preselectedImage {
+                showImagePicker = false
+                viewModel.didSelectImage(image, gps: preselectedGPS)
             }
         }
         .interactiveDismissDisabled(viewModel.state != .idle)
