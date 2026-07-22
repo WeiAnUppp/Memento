@@ -173,7 +173,6 @@ struct CameraPreview: UIViewRepresentable {
 struct CameraHalfView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var camera = CameraModel()
-    @State private var flashOverlay = false
     @State private var captureScale: CGFloat = 1
     @State private var previewSize: CGSize = .zero
 
@@ -191,13 +190,6 @@ struct CameraHalfView: View {
                 errorState(error)
             } else {
                 ProgressView().tint(.white)
-            }
-
-            if flashOverlay {
-                Rectangle()
-                    .fill(.white)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
             }
 
             VStack(spacing: 0) {
@@ -313,15 +305,6 @@ struct CameraHalfView: View {
     private func capturePhoto() {
         withAnimation(.spring(response: 0.2, dampingFraction: 0.6)) {
             captureScale = 0.88
-        }
-
-        withAnimation(.easeOut(duration: 0.08)) {
-            flashOverlay = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            withAnimation(.easeOut(duration: 0.25)) {
-                flashOverlay = false
-            }
         }
 
         camera.capture()

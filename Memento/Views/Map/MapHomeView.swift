@@ -12,6 +12,7 @@ struct MapHomeView: View {
     @Bindable var viewModel: MapViewModel
     let locationService: LocationService
     @State private var showDetail = false
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 递增触发地图居中（0 = 初始，每次需要居中时 +1）
     @State private var centerTrigger = 0
@@ -22,6 +23,7 @@ struct MapHomeView: View {
             movingItemId: viewModel.movingItemId,
             userCoordinate: locationService.currentLocation?.coordinate,
             centerTrigger: centerTrigger,
+            colorScheme: colorScheme,
             onTapItem: { id in
                 guard let item = viewModel.items.first(where: { $0.id == id }) else { return }
                 viewModel.selectedItem = item
