@@ -105,7 +105,6 @@ struct CaptureView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            // 卡片堆叠
             cardStackSection
 
             Spacer()
@@ -231,9 +230,14 @@ struct CaptureView: View {
     private var inputCard: some View {
         HStack(spacing: 10) {
             voiceButton
-            TextField("简单描述一下...", text: $viewModel.userContext)
-                .textFieldStyle(.plain)
-                .font(.title3)
+            if viewModel.speechService.isRecording {
+                InlineSoundWave()
+                    .frame(maxWidth: .infinity)
+            } else {
+                TextField("简单描述一下...", text: $viewModel.userContext)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -243,34 +247,43 @@ struct CaptureView: View {
     // MARK: - Voice Button
 
     private var voiceButton: some View {
-        Button {
-            viewModel.speechService.isRecording
-                ? viewModel.stopVoiceInput()
-                : viewModel.startVoiceInput()
+        let hasText = !viewModel.userContext.isEmpty
+        let isRec = viewModel.speechService.isRecording
+
+        return Button {
+            if isRec {
+                viewModel.stopVoiceInput()
+            } else if hasText {
+                viewModel.userContext = ""
+            } else {
+                viewModel.startVoiceInput()
+            }
         } label: {
             ZStack {
                 Circle()
-                    .fill(viewModel.speechService.isRecording ? .red : .blue)
+                    .fill(circleColor)
                     .frame(width: 44, height: 44)
 
-                Group {
-                    if viewModel.speechService.isRecording {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 18, weight: .medium))
-                    } else {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 20, weight: .medium))
-                    }
-                }
-                .foregroundStyle(.white)
+                Image(systemName: iconName)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white)
             }
         }
         .buttonStyle(.plain)
-        .onChange(of: viewModel.speechService.isRecording) { _, recording in
-            if !recording, !viewModel.speechService.transcript.isEmpty {
-                viewModel.userContext = viewModel.speechService.transcript
-            }
-        }
+    }
+
+    /// 麦克风按钮颜色
+    private var circleColor: Color {
+        if viewModel.speechService.isRecording { return .red }
+        if !viewModel.userContext.isEmpty { return .secondary.opacity(0.6) }
+        return .blue
+    }
+
+    /// 麦克风按钮图标：有文字→叉号 | 录音中→停止 | 空闲→麦克风
+    private var iconName: String {
+        if viewModel.speechService.isRecording { return "stop.fill" }
+        if !viewModel.userContext.isEmpty { return "xmark" }
+        return "mic.fill"
     }
 
     // MARK: - Analyzing

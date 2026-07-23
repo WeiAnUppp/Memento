@@ -53,6 +53,8 @@ struct ContentView: View {
     /// 照片卡片交互状态
     @State private var photoCardIndex = 0
     @State private var photoDragOffset: CGSize = .zero
+    /// 麦克风录音最大时长保护（秒）
+    private let maxRecordingDuration: TimeInterval = 60
 
     /// 是否正在记录中（底部栏变身）
     private var isRecording: Bool {
@@ -96,24 +98,31 @@ struct ContentView: View {
             pageContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 记录时遮罩 — 始终存在，用 opacity 控制显隐（避免 transition 不可靠）
+            // 记录时遮罩 — 全屏灰色
+            // 键盘弹出 → 先收键盘；无图片 → 可退出；有图片 → 不可退出
             Color.black
                 .ignoresSafeArea()
-                .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.55 : 0.35) : 0)
-                .allowsHitTesting(showRecordingOverlay)
-                .onTapGesture {
-                    isDescriptionFocused = false
-                    dismissRecording()
-                }
+                .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.5 : 0.3) : 0)
                 .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
+                .onTapGesture {
+                    if isDescriptionFocused {
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                            isDescriptionFocused = false
+                        }
+                    } else if captureViewModel.selectedImages.isEmpty {
+                        dismissRecording()
+                    }
+                }
+                .allowsHitTesting(showRecordingOverlay)
 
-            // 顶层：自定义顶栏 — 记录时变灰不可交互，tap 穿透到遮罩退出
+            // 顶层：自定义顶栏 — 记录时半透明但仍可交互
             if showCustomTopBar {
                 VStack(spacing: 0) {
                     customTopBar
                     Spacer()
                 }
-                .opacity(isRecording ? 0.45 : 1)
+                .opacity(isRecording ? 0.65 : 1)
+                .allowsHitTesting(true)
                 .animation(.spring(response: 0.55, dampingFraction: 0.82), value: isRecording)
             }
 
@@ -121,8 +130,12 @@ struct ContentView: View {
             captureOverlay
                 .opacity(showRecordingOverlay ? 1 : 0)
                 .offset(y: showRecordingOverlay ? 0 : 120)
-                .allowsHitTesting(showRecordingOverlay)
                 .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
+                .simultaneousGesture(TapGesture().onEnded {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                        isDescriptionFocused = false
+                    }
+                })
 
             // 底部栏
             VStack(spacing: 0) {
@@ -174,10 +187,13 @@ struct ContentView: View {
                 dismissRecording(after: 0.6)
             }
         }
-        // 语音识别结果回填
+        // 语音识别结果回填（使用过滤语气词后的文本）
         .onChange(of: captureViewModel.speechService.isRecording) { _, recording in
-            if !recording, !captureViewModel.speechService.transcript.isEmpty {
-                captureViewModel.userContext = captureViewModel.speechService.transcript
+            if !recording {
+                let cleaned = captureViewModel.speechService.cleanedTranscript
+                if !cleaned.isEmpty {
+                    captureViewModel.userContext = cleaned
+                }
             }
         }
         .onChange(of: selectedPage) { _, _ in
@@ -298,41 +314,75 @@ struct ContentView: View {
     @ViewBuilder
     private func centerCapsule(isInput: Bool) -> some View {
         if isInput {
-            // 描述输入
             HStack(spacing: 8) {
                 ZStack(alignment: .leading) {
                     TextField("", text: $captureViewModel.userContext)
                         .textFieldStyle(.plain)
                         .font(.body)
                         .focused($isDescriptionFocused)
+                        .disabled(captureViewModel.speechService.isRecording)
 
-                    if captureViewModel.userContext.isEmpty {
+                    if captureViewModel.userContext.isEmpty && !captureViewModel.speechService.isRecording {
                         shimmerPlaceholder
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
+                    if captureViewModel.speechService.isRecording {
+                        InlineSoundWave()
+                            .allowsHitTesting(false)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 1.1).combined(with: .opacity),
+                                removal: .scale(scale: 0.92).combined(with: .opacity)
+                            ))
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .animation(.spring(response: 0.45, dampingFraction: 0.78), value: captureViewModel.speechService.isRecording)
+
+                // 有文字 → 清空按钮 | 录音中 → 停止 | 默认 → 麦克风
+                let hasText = !captureViewModel.userContext.isEmpty
+                let isRec = captureViewModel.speechService.isRecording
+                let iconName = hasText && !isRec
+                    ? "xmark.circle.fill"
+                    : (isRec ? "stop.fill" : "mic.fill")
+                let iconColor: Color = isRec
+                    ? .red
+                    : (hasText ? .secondary : .secondary)
 
                 Button {
-                    if captureViewModel.speechService.isRecording {
+                    if isRec {
                         captureViewModel.stopVoiceInput()
+                    } else if hasText {
+                        captureViewModel.userContext = ""
                     } else {
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                            isDescriptionFocused = false
+                        }
                         captureViewModel.startVoiceInput()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + maxRecordingDuration) { [weak captureViewModel = captureViewModel] in
+                            guard captureViewModel?.speechService.isRecording == true else { return }
+                            captureViewModel?.stopVoiceInput()
+                        }
                     }
                 } label: {
-                    Image(systemName: captureViewModel.speechService.isRecording
-                          ? "stop.fill"
-                          : "mic.fill")
-                        .foregroundStyle(
-                            captureViewModel.speechService.isRecording
-                            ? .red
-                            : .primary
-                        )
-                        .font(.system(size: 16))
+                    Image(systemName: iconName)
+                        .foregroundStyle(iconColor)
+                        .contentTransition(.opacity)
+                        .padding(.vertical, 12)
+                        .padding(.leading, 14)
+                        .padding(.trailing, 4)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .frame(height: 50)
             .glassEffect(.regular, in: .capsule)
+            .glowingBorder(
+                shape: .capsule,
+                lineWidth: 1.5,
+                glowRadius: 4,
+                isActive: captureViewModel.speechService.isRecording
+            )
         } else {
             // 搜索入口
             Button {

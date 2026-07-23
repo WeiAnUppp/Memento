@@ -84,24 +84,88 @@ final class SpeechService: NSObject, SFSpeechRecognizerDelegate {
             let isFinal = result?.isFinal ?? false
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.isRecording else { return }
-                self.transcript = text
+                guard let self else { return }
+                // 始终更新 transcript，即使 isRecording 已为 false（确保最终结果被捕获）
+                if !text.isEmpty {
+                    self.transcript = text
+                }
 
                 if error != nil || isFinal {
-                    self.stopRecording()
+                    self.cleanupRecognition()
                 }
             }
         }
     }
 
     func stopRecording() {
+        // 停止音频引擎，发送结束信号
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
+        isRecording = false
+        // 延迟清理 recognitionTask，给识别器时间交付最终结果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.cleanupRecognition()
+        }
+    }
+
+    private func cleanupRecognition() {
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
-        isRecording = false
+    }
+
+    // MARK: - Clean Transcript
+
+    /// 过滤语气词后的转录结果
+    var cleanedTranscript: String {
+        Self.removeFillerWords(transcript)
+    }
+
+    /// 移除中文常见语气词和填充词
+    static func removeFillerWords(_ text: String) -> String {
+        var result = text
+
+        // 长短语优先匹配，避免"那个什么"被拆成"那个"+"什么"
+        let phraseFillers: [String] = [
+            "就是说呢", "就是说", "那个什么", "这个什么",
+            "对不对", "对吧", "是吧", "那啥",
+            "什么的", "反正", "然后呢",
+        ]
+
+        for phrase in phraseFillers {
+            result = result.replacingOccurrences(of: phrase, with: "")
+        }
+
+        // 短填充词（按长度降序，避免短词先匹配破坏长词）
+        let wordFillers: [String] = [
+            "然后", "这个", "那个", "就是",
+            "嗯", "啊", "哦", "呃", "唔", "诶", "哎",
+            "哈", "呀", "呐", "嘛", "吧", "呢",
+        ]
+
+        for word in wordFillers {
+            result = result.replacingOccurrences(of: word, with: "")
+        }
+
+        // 清理多余空格和标点残留
+        result = result.replacingOccurrences(of: "，,", with: "，")
+            .replacingOccurrences(of: "，，", with: "，")
+            .replacingOccurrences(of: " 。", with: "。")
+            .replacingOccurrences(of: "。。", with: "。")
+
+        // 合并连续空格
+        while result.contains("  ") {
+            result = result.replacingOccurrences(of: "  ", with: " ")
+        }
+
+        // 去掉首尾空格和标点残留
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        let punctuationToTrim = CharacterSet(charactersIn: "\u{201C}\u{201D}\u{FF0C}\u{3002}\u{3001}\u{FF01}\u{FF1F}\u{FF1B}\u{FF1A}\u{2018}\u{2019}\u{2026}\u{2014}\u{00B7}")
+        result = result.trimmingCharacters(in: punctuationToTrim)
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return result
     }
 
     // MARK: - SFSpeechRecognizerDelegate

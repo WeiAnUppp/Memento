@@ -68,9 +68,9 @@ final class CaptureViewModel {
 
     func stopVoiceInput() {
         speechService.stopRecording()
-        // 将识别结果填入输入框
-        if !speechService.transcript.isEmpty {
-            userContext = speechService.transcript
+        let cleaned = speechService.cleanedTranscript
+        if !cleaned.isEmpty {
+            userContext = cleaned
         }
     }
 
