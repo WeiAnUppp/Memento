@@ -14,7 +14,7 @@ struct ItemListView: View {
     @State private var items: [Item] = []
     @State private var selectedItem: Item?
     @State private var showDetail = false
-    @State private var accumulatedScrollDelta: CGFloat = 0
+    @State private var barHidden = false
 
     private let dbService = DatabaseService.shared
 
@@ -63,15 +63,11 @@ struct ItemListView: View {
         .contentMargins(.top, 66, for: .scrollContent)
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y
-        } action: { oldValue, newValue in
-            accumulatedScrollDelta += newValue - oldValue
-
-            if accumulatedScrollDelta > 50 {
-                onBarVisibilityChange?(false)
-                accumulatedScrollDelta = 0
-            } else if accumulatedScrollDelta < -50 {
-                onBarVisibilityChange?(true)
-                accumulatedScrollDelta = 0
+        } action: { _, newValue in
+            let shouldHide = newValue > 50
+            if shouldHide != barHidden {
+                barHidden = shouldHide
+                onBarVisibilityChange?(!shouldHide)
             }
         }
         .refreshable {
