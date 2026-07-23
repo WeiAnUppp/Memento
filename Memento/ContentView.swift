@@ -68,9 +68,9 @@ struct ContentView: View {
         return false
     }
 
-    /// 设置页使用原生大标题导航栏，不需要自定义顶栏
+    /// 设置页有自己的顶栏，记录时全屏遮罩不需要顶栏
     private var showCustomTopBar: Bool {
-        selectedPage != .settings || isRecording
+        selectedPage != .settings && !isRecording
     }
 
     /// 底部栏可见性：记录时始终显示
@@ -684,7 +684,8 @@ struct ContentView: View {
             if selectedPage == .settings {
                 SettingsView(
                     selectedPage: $selectedPage,
-                    navigationDepth: $settingsNavigationDepth
+                    navigationDepth: $settingsNavigationDepth,
+                    hideTopBar: isRecording
                 )
                 .disabled(isRecording)
             }
