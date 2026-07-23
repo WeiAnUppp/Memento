@@ -255,6 +255,54 @@ struct SavingOverlay: View {
     }
 }
 
+// MARK: - Analysis Progress Sheet
+
+/// 后台 AI 分析进度 — 点击左上角旋转图标时弹出
+struct AnalysisProgressSheet: View {
+    let image: UIImage?
+    let statusText: String
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.quaternary)
+                        .frame(height: 200)
+                        .overlay {
+                            Image(systemName: "photo")
+                                .font(.system(size: 44))
+                                .foregroundStyle(.tertiary)
+                        }
+                }
+
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(statusText)
+                        .font(.headline)
+                }
+
+                Text("识别完成后将自动保存并定位到物品位置")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+            }
+            .padding(24)
+            .navigationTitle("AI 识别中")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+}
+
 // MARK: - Swipe Gesture Helper
 
 extension PhotoCardStack {

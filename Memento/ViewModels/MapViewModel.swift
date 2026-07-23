@@ -21,6 +21,10 @@ final class MapViewModel {
     /// 当前正在被拖拽的大头针 ID（nil = 无拖拽）
     var movingItemId: Int64?
 
+    /// 坐标聚焦触发（新增物品保存后自动定位）
+    var focusCoordinate: CLLocationCoordinate2D?
+    var focusTrigger: Int = 0
+
     var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
@@ -49,15 +53,15 @@ final class MapViewModel {
     // MARK: - Actions
 
     func focusOnItem(_ item: Item) {
-        withAnimation {
-            cameraPosition = .region(
-                MKCoordinateRegion(
-                    center: item.coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                )
-            )
-            selectedItem = item
-        }
+        selectedItem = item
+        focusCoordinate = item.coordinate
+        focusTrigger += 1
+    }
+
+    /// 聚焦到指定坐标（供 ContentView 在自动保存后调用）
+    func focusOnCoordinate(_ coordinate: CLLocationCoordinate2D) {
+        focusCoordinate = coordinate
+        focusTrigger += 1
     }
 
     func deselectItem() {

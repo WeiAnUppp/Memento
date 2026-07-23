@@ -14,6 +14,7 @@ enum CaptureState: Equatable {
     case idle
     case readyForInput       // 图片已选，等待用户填写表单
     case analyzing
+    case backgroundAnalyzing // API 已发起，UI 已退出，后台运行中
     case preview(AIResponse)
     case saving
     case saved(Item)
@@ -35,6 +36,19 @@ final class CaptureViewModel {
 
     // AI 结果编辑
     var editedName: String = ""
+
+    /// 后台分析相关
+    var analyzingImage: UIImage?
+    var analyzingStatusText: String = "AI 正在识别物品…"
+    var analysisDidFail: Bool = false
+    var analysisErrorMessage: String = ""
+    var lastSavedItemCoordinate: CLLocationCoordinate2D?
+
+    /// 是否正在后台分析
+    var isBackgroundAnalyzing: Bool {
+        if case .backgroundAnalyzing = state { return true }
+        return false
+    }
 
     /// 是否可以进入 AI 分析
     var canProceed: Bool {
@@ -98,10 +112,25 @@ final class CaptureViewModel {
         }
     }
 
-    /// 用户确认表单，开始 AI 分析
+    /// 用户确认表单，开始 AI 后台分析（UI 立即退出）
     func proceedToAnalysis() {
         guard canProceed else { return }
-        Task { await analyzeImages() }
+
+        // 捕获当前数据
+        let images = selectedImages
+        let context = userContext
+        let gps = photoGPSs.first ?? nil
+
+        analyzingImage = images.first
+        analyzingStatusText = "AI 正在识别物品…"
+        analysisDidFail = false
+        analysisErrorMessage = ""
+
+        // 立即退出记录 UI
+        state = .backgroundAnalyzing
+
+        // 启动后台分析
+        Task { await performBackgroundAnalysis(images: images, context: context, gps: gps) }
     }
 
     /// 兼容旧接口：直接传第一张图（来自外部调用）
@@ -115,6 +144,13 @@ final class CaptureViewModel {
 
     func confirmSave() {
         guard case .preview(let response) = state else { return }
+        saveItem(with: response)
+    }
+
+    // MARK: - Core Save
+
+    /// 保存物品到数据库（前台预览保存 & 后台自动保存共用）
+    private func saveItem(with response: AIResponse) {
         state = .saving
 
         let name = editedName.isEmpty ? response.name : editedName
@@ -174,6 +210,7 @@ final class CaptureViewModel {
         do {
             let id = try dbService.insert(item, embedding: embedding)
             item.id = id
+            lastSavedItemCoordinate = item.coordinate
             state = .saved(item)
         } catch {
             state = .error("保存失败: \(error.localizedDescription)")
@@ -199,20 +236,30 @@ final class CaptureViewModel {
         photoGPSs = []
         userContext = ""
         editedName = ""
+        analyzingImage = nil
+        analyzingStatusText = "AI 正在识别物品…"
+        analysisDidFail = false
+        analysisErrorMessage = ""
+        lastSavedItemCoordinate = nil
     }
 
     // MARK: - Private
 
-    private func analyzeImages() async {
-        state = .analyzing
-
+    /// 后台执行 AI 分析 + 自动保存
+    private func performBackgroundAnalysis(
+        images: [UIImage],
+        context: String,
+        gps: CLLocationCoordinate2D?
+    ) async {
         // 转换所有图片为 base64
-        let base64List = selectedImages.compactMap { image -> String? in
+        let base64List = images.compactMap { image -> String? in
             guard let data = image.jpegData(compressionQuality: 0.8) else { return nil }
             return data.base64EncodedString()
         }
 
         guard !base64List.isEmpty else {
+            analysisDidFail = true
+            analysisErrorMessage = "图片处理失败"
             state = .error("图片处理失败")
             return
         }
@@ -220,15 +267,23 @@ final class CaptureViewModel {
         do {
             let response = try await aiService.analyzeImages(
                 base64Images: base64List,
-                userContext: userContext
+                userContext: context
             )
-            // 防止用户在分析期间取消导致状态错乱
-            guard case .analyzing = state else { return }
-            editedName = response.name
-            state = .preview(response)
+
+            // 确认仍在后台分析状态（未被取消）
+            guard case .backgroundAnalyzing = state else { return }
+
+            await MainActor.run {
+                editedName = response.name
+                saveItem(with: response)
+            }
         } catch {
-            guard case .analyzing = state else { return }
-            state = .error("AI 识别失败: \(error.localizedDescription)")
+            guard case .backgroundAnalyzing = state else { return }
+            await MainActor.run {
+                analysisDidFail = true
+                analysisErrorMessage = error.localizedDescription
+                state = .error("AI 识别失败: \(error.localizedDescription)")
+            }
         }
     }
 }

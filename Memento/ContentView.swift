@@ -59,7 +59,7 @@ struct ContentView: View {
     /// 是否正在记录中（底部栏变身）
     private var isRecording: Bool {
         switch captureViewModel.state {
-        case .idle, .saved: return false
+        case .idle, .saved, .backgroundAnalyzing: return false
         default: return true
         }
     }
@@ -89,6 +89,12 @@ struct ContentView: View {
 
     /// 列表页滚动时隐藏底部栏
     @State private var listBarHidden = false
+
+    /// 后台分析进度 sheet
+    @State private var showAnalysisProgress = false
+
+    /// ✨ 按钮退出动画分步控制
+    @State private var sparklesAnimatingOut = false
 
     // MARK: - Body
 
@@ -126,6 +132,22 @@ struct ContentView: View {
                 .animation(.spring(response: 0.55, dampingFraction: 0.82), value: isRecording)
             }
 
+            // 后台分析旋转图标 — 始终在所有页面可见
+            if captureViewModel.isBackgroundAnalyzing {
+                VStack(spacing: 0) {
+                    HStack {
+                        SpinningDotsButton {
+                            showAnalysisProgress = true
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    Spacer()
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+
             // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
             captureOverlay
                 .opacity(showRecordingOverlay ? 1 : 0)
@@ -155,6 +177,13 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
         }
+        // 后台分析进度 sheet
+        .sheet(isPresented: $showAnalysisProgress) {
+            AnalysisProgressSheet(
+                image: captureViewModel.analyzingImage,
+                statusText: captureViewModel.analyzingStatusText
+            )
+        }
         // 相机半屏
         .sheet(isPresented: $showCameraSheet) {
             CameraHalfView { image in
@@ -177,14 +206,34 @@ struct ContentView: View {
         .onChange(of: showPhotoSheet) { _, showing in
             if !showing { handlePhotoCaptured() }
         }
-        // 保存成功 → 刷新地图并回到搜索模式
+        // 保存成功 → 刷新地图，自动定位，清理状态
         .onChange(of: captureViewModel.state) { _, newState in
-            if case .saved = newState {
+            switch newState {
+            case .backgroundAnalyzing:
+                // 录音 UI 立即关闭（isRecording 已为 false，showRecordingOverlay 自动跟随）
+                break
+            case .saved(let item):
                 mapViewModel.loadItems()
+                mapViewModel.focusOnItem(item)
                 photoCardIndex = 0
                 photoDragOffset = .zero
-                // 先播退出动画，动画完成后再 reset ViewModel
-                dismissRecording(after: 0.6)
+                showAnalysisProgress = false
+                if showRecordingOverlay {
+                    // 前台预览保存路径 → 退出录音遮罩
+                    dismissRecording(after: 0.6)
+                } else {
+                    // 后台自动保存路径 → 直接重置 VM
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        captureViewModel.reset()
+                    }
+                }
+            case .error where captureViewModel.analysisDidFail:
+                // 后台分析失败 → 静默重置
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    captureViewModel.reset()
+                }
+            default:
+                break
             }
         }
         // 语音识别结果回填（使用过滤语气词后的文本）
@@ -198,6 +247,11 @@ struct ContentView: View {
         }
         .onChange(of: selectedPage) { _, _ in
             listBarHidden = false
+        }
+        .onChange(of: captureViewModel.state) { _, newState in
+            if case .readyForInput = newState {
+                sparklesAnimatingOut = false
+            }
         }
     }
 
@@ -264,7 +318,7 @@ struct ContentView: View {
     @ViewBuilder
     private var bottomBarContent: some View {
         switch captureViewModel.state {
-        case .idle, .saved, .readyForInput:
+        case .idle, .saved, .readyForInput, .backgroundAnalyzing:
             searchOrRecordBar
         case .analyzing:
             analyzingBar
@@ -288,9 +342,29 @@ struct ContentView: View {
 
             centerCapsule(isInput: isInput)
 
-            if isInput {
+            if isInput && !sparklesAnimatingOut {
                 Button {
-                    captureViewModel.proceedToAnalysis()
+                    // 阶段 0：键盘先收起（如果正在输入）
+                    if isDescriptionFocused {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            isDescriptionFocused = false
+                        }
+                    }
+
+                    // 阶段 1：键盘开始下落后，✨ 缩进胶囊
+                    let sparkleDelay = isDescriptionFocused ? 0.18 : 0.0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + sparkleDelay) {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
+                            sparklesAnimatingOut = true
+                        }
+
+                        // 阶段 2：✨ 缩回后，胶囊展开为搜索栏
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                                captureViewModel.proceedToAnalysis()
+                            }
+                        }
+                    }
                 } label: {
                     Image(systemName: "sparkles")
                         .font(.title3)
@@ -306,7 +380,8 @@ struct ContentView: View {
                 .symbolEffect(.bounce.up.byLayer, options: .nonRepeating, value: isInput)
             }
         }
-        .animation(.spring(duration: 0.6, bounce: 0.15), value: isInput)
+        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: isInput)
+        .animation(.spring(response: 0.22, dampingFraction: 0.72), value: sparklesAnimatingOut)
     }
 
     // MARK: Center Capsule
@@ -615,7 +690,7 @@ struct ContentView: View {
             savingOverlayView
         case .error(let message):
             errorOverlayView(message: message)
-        default:
+        case .idle, .backgroundAnalyzing, .saved:
             EmptyView()
         }
     }

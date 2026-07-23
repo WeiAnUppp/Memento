@@ -45,6 +45,8 @@ struct CaptureView: View {
                     Color.clear.onAppear { onDismiss() }
                 case .error(let message):
                     errorView(message: message)
+                case .backgroundAnalyzing:
+                    Color.clear.onAppear { onDismiss() }
                 }
             }
             .navigationTitle("记录物品")

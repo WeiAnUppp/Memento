@@ -23,6 +23,8 @@ struct MapHomeView: View {
             movingItemId: viewModel.movingItemId,
             userCoordinate: locationService.currentLocation?.coordinate,
             centerTrigger: centerTrigger,
+            focusCoordinate: viewModel.focusCoordinate,
+            focusTrigger: viewModel.focusTrigger,
             colorScheme: colorScheme,
             onTapItem: { id in
                 guard let item = viewModel.items.first(where: { $0.id == id }) else { return }

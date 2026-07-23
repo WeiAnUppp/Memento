@@ -35,6 +35,8 @@ struct MapKitView: UIViewRepresentable {
     var movingItemId: Int64?
     var userCoordinate: CLLocationCoordinate2D?
     var centerTrigger: Int
+    var focusCoordinate: CLLocationCoordinate2D?
+    var focusTrigger: Int
     var colorScheme: ColorScheme?
 
     let onTapItem: (Int64) -> Void
@@ -84,6 +86,17 @@ struct MapKitView: UIViewRepresentable {
             )
             mapView.setRegion(region, animated: true)
         }
+
+        // 坐标聚焦（物品保存后自动定位到 GPS 位置）
+        if focusTrigger != context.coordinator.lastFocusTrigger,
+           let coord = focusCoordinate {
+            context.coordinator.lastFocusTrigger = focusTrigger
+            let region = MKCoordinateRegion(
+                center: coord,
+                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            )
+            mapView.setRegion(region, animated: true)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -97,6 +110,7 @@ struct MapKitView: UIViewRepresentable {
         private var annotationMap: [Int64: ItemPoint] = [:]
 
         var lastCenterTrigger = -1
+        var lastFocusTrigger = -1
         var lastColorScheme: ColorScheme?
         var onTapItem: ((Int64) -> Void)?
         var onMoveStarted: ((Int64) -> Void)?
