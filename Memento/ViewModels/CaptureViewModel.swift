@@ -185,10 +185,12 @@ final class CaptureViewModel {
     func retry() {
         let images = selectedImages
         let gps = photoGPSs
+        let context = userContext
         reset()
         selectedImages = images
         photoGPSs = gps
-        // 保持 readyForInput 以便用户可以修改表单后重试
+        userContext = context
+        state = .readyForInput
     }
 
     func reset() {

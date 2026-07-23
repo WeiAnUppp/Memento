@@ -78,9 +78,9 @@ struct PhotoCardStack: View {
             .offset(y: CGFloat(depth) * 8)
             .opacity(depth == 0 ? 1 : 0.45 - Double(depth) * 0.15)
             .offset(x: isTop ? dragOffset.width : 0)
-            // 右上角删除按钮 — iOS 26 玻璃圆按钮，仅顶层卡片显示
+            // 右上角删除按钮 — iOS 26 玻璃圆按钮，仅顶层卡片显示，带弹性动画
             .overlay(alignment: .topTrailing) {
-                if isTop, let onRemove {
+                if let onRemove {
                     Button {
                         onRemove(index)
                     } label: {
@@ -91,6 +91,11 @@ struct PhotoCardStack: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .tint(.primary)
                     .padding(8)
+                    .opacity(isTop ? 1 : 0)
+                    .scaleEffect(isTop ? 1 : 0.5)
+                    .blur(radius: isTop ? 0 : 4)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isTop)
+                    .allowsHitTesting(isTop)
                 }
             }
     }

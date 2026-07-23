@@ -26,6 +26,7 @@ enum AppPage: String, CaseIterable {
 // MARK: - ContentView
 
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedPage: AppPage = .map
     @State private var showSearch = false
     @State private var settingsNavigationDepth = 0
@@ -43,6 +44,9 @@ struct ContentView: View {
 
     /// 记录物品 ViewModel —— 融入底部栏
     @State private var captureViewModel = CaptureViewModel()
+
+    /// 遮罩+浮层动画专用 Bool — 与 ViewModel 状态解耦，确保动画事务正确传播
+    @State private var showRecordingOverlay = false
 
     /// 照片卡片交互状态
     @State private var photoCardIndex = 0
@@ -90,13 +94,13 @@ struct ContentView: View {
             pageContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 记录时轻微遮罩
-            if isRecording {
-                Color.black.opacity(0.12)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
+            // 记录时遮罩 — 始终存在，用 opacity 控制显隐（避免 transition 不可靠）
+            Color.black
+                .ignoresSafeArea()
+                .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.55 : 0.35) : 0)
+                .allowsHitTesting(showRecordingOverlay)
+                .onTapGesture { dismissRecording() }
+                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
 
             // 顶层：自定义顶栏
             if showCustomTopBar {
@@ -106,11 +110,12 @@ struct ContentView: View {
                 }
             }
 
-            // 记录浮层 — 在底部栏上方
-            if isRecording {
-                captureOverlay
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
+            captureOverlay
+                .opacity(showRecordingOverlay ? 1 : 0)
+                .offset(y: showRecordingOverlay ? 0 : 120)
+                .allowsHitTesting(showRecordingOverlay)
+                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
 
             // 底部栏
             VStack(spacing: 0) {
@@ -123,7 +128,10 @@ struct ContentView: View {
                     .animation(.smooth(duration: 0.35), value: showBottomBar)
             }
         }
-        .animation(.smooth(duration: 0.35), value: isRecording)
+        // 同步 ViewModel 状态到动画 Bool
+        .onChange(of: isRecording) { _, recording in
+            showRecordingOverlay = recording
+        }
         .fullScreenCover(isPresented: $showSearch) {
             SearchModalView()
         }
@@ -155,11 +163,8 @@ struct ContentView: View {
                 mapViewModel.loadItems()
                 photoCardIndex = 0
                 photoDragOffset = .zero
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
-                        captureViewModel.reset()
-                    }
-                }
+                // 先播退出动画，动画完成后再 reset ViewModel
+                dismissRecording(after: 0.6)
             }
         }
         // 语音识别结果回填
@@ -177,16 +182,31 @@ struct ContentView: View {
 
     private func handlePhotoCaptured() {
         guard let image = pendingImage else { return }
-        withAnimation(.spring(duration: 0.6, bounce: 0.2)) {
-            if isAddingMorePhotos {
-                captureViewModel.addImage(image, gps: nil)
-                photoCardIndex = max(captureViewModel.selectedImages.count - 1, 0)
-            } else {
-                captureViewModel.didSelectFirstImage(image, gps: nil)
-                photoCardIndex = 0
-            }
+        if isAddingMorePhotos {
+            captureViewModel.addImage(image, gps: nil)
+            photoCardIndex = max(captureViewModel.selectedImages.count - 1, 0)
+        } else {
+            captureViewModel.didSelectFirstImage(image, gps: nil)
+            photoCardIndex = 0
         }
         pendingImage = nil
+    }
+
+    // MARK: - Dismiss Recording
+
+    /// 退出记录：设 false → 动画自动播放 → 动画完成后重置 ViewModel
+    private func dismissRecording(after delay: TimeInterval = 0) {
+        photoCardIndex = 0
+        photoDragOffset = .zero
+        let dismiss = { showRecordingOverlay = false }
+        let reset = { captureViewModel.reset() }
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: dismiss)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.6, execute: reset)
+        } else {
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: reset)
+        }
     }
 
     // MARK: - Custom Top Bar
@@ -195,36 +215,20 @@ struct ContentView: View {
         HStack(alignment: .center) {
             Spacer()
 
-            if isRecording {
-                Button {
-                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
-                        captureViewModel.reset()
-                        photoCardIndex = 0
-                        photoDragOffset = .zero
+            Menu {
+                Picker("视图", selection: $selectedPage) {
+                    ForEach(AppPage.allCases, id: \.self) { page in
+                        Label(page.rawValue, systemImage: page.icon)
+                            .tag(page)
                     }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 50, height: 50)
                 }
-                .glassEffect(.regular.interactive(), in: .circle)
-                .tint(.primary)
-            } else {
-                Menu {
-                    Picker("视图", selection: $selectedPage) {
-                        ForEach(AppPage.allCases, id: \.self) { page in
-                            Label(page.rawValue, systemImage: page.icon)
-                                .tag(page)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.horizontal.3.decrease")
-                        .font(.title2)
-                        .frame(width: 50, height: 50)
-                }
-                .glassEffect(.regular.interactive(), in: .circle)
-                .tint(.primary)
+            } label: {
+                Image(systemName: "line.horizontal.3.decrease")
+                    .font(.title2)
+                    .frame(width: 50, height: 50)
             }
+            .glassEffect(.regular.interactive(), in: .circle)
+            .tint(.primary)
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -454,11 +458,7 @@ struct ContentView: View {
             Spacer()
 
             Button {
-                withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
-                    captureViewModel.reset()
-                    photoCardIndex = 0
-                    photoDragOffset = .zero
-                }
+                dismissRecording()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "xmark")
@@ -587,11 +587,7 @@ struct ContentView: View {
                 photoDragOffset = .zero
             },
             onCancel: {
-                withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
-                    captureViewModel.reset()
-                    photoCardIndex = 0
-                    photoDragOffset = .zero
-                }
+                dismissRecording()
             }
         )
     }
