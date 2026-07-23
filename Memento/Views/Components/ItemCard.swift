@@ -11,35 +11,26 @@ struct ItemCard: View {
     let item: Item
 
     var body: some View {
-        HStack(spacing: 12) {
-            // 缩略图
+        HStack(spacing: 14) {
+            // 左侧：缩略图
             thumbnailView
 
-            // 文字信息
+            // 右侧：名称 + 位置·时间
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
                     .font(.headline)
                     .lineLimit(1)
-                Text(item.itemDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
 
-                HStack(spacing: 8) {
-                    if let scene = item.scene, !scene.isEmpty {
-                        Label(scene, systemImage: "house.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                    Text(item.createdAt.formatted(date: .numeric, time: .shortened))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+                locationAndDate
             }
         }
         .padding(12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.quaternary, lineWidth: 0.5)
+        )
     }
 
     // MARK: - Thumbnail
@@ -53,17 +44,34 @@ struct ItemCard: View {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         } else {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(.quaternary)
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
                 .overlay {
-                    Image(systemName: "photo")
-                        .font(.title3)
-                        .foregroundStyle(.tertiary)
+                    Text(item.emoji ?? "📦")
+                        .font(.system(size: 28))
                 }
         }
+    }
+
+    // MARK: - Location & Date
+
+    private var locationAndDate: some View {
+        HStack(spacing: 4) {
+            if let scene = item.scene, !scene.isEmpty {
+                Text(scene)
+            }
+            if item.scene?.isEmpty == false {
+                Text("·")
+                    .foregroundStyle(.tertiary)
+            }
+            Text(item.createdAt.friendlyChineseFormat)
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
