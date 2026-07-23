@@ -23,6 +23,7 @@ struct ItemDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedEmoji: String
+    @State private var currentImageIndex = 0
 
     init(item: Item, onUpdate: (() -> Void)? = nil) {
         self.item = item
@@ -34,16 +35,46 @@ struct ItemDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // 图片
-                    if let imagePath = item.imagePath,
-                       let url = DatabaseService.imageURL(for: imagePath),
-                       let data = try? Data(contentsOf: url),
-                       let uiImage = UIImage(data: data) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                    // 多图展示
+                    let paths = item.imagePaths
+                    if !paths.isEmpty {
+                        VStack(spacing: 8) {
+                            TabView(selection: $currentImageIndex) {
+                                ForEach(Array(paths.enumerated()), id: \.offset) { index, imagePath in
+                                    if let url = DatabaseService.imageURL(for: imagePath),
+                                       let data = try? Data(contentsOf: url),
+                                       let uiImage = UIImage(data: data) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(maxHeight: 280)
+                                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                                            .tag(index)
+                                    } else {
+                                        // 图片加载失败时显示占位
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "photo.badge.exclamationmark")
+                                                .font(.system(size: 40))
+                                                .foregroundStyle(.secondary)
+                                            Text("图片加载失败")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .frame(maxHeight: 280)
+                                        .tag(index)
+                                    }
+                                }
+                            }
+                            .tabViewStyle(.page(indexDisplayMode: .always))
+                            .frame(height: 300)
+
+                            // 图片计数
+                            if paths.count > 1 {
+                                Text("\(currentImageIndex + 1) / \(paths.count)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
 
                     // 图标选择

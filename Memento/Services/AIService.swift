@@ -20,10 +20,18 @@ struct AIService {
 
     // MARK: - Public API
 
-    /// 分析图片中的物品，返回结构化描述
-    func analyzeImage(base64Image: String, mimeType: String = "image/jpeg") async throws -> AIResponse {
+    /// 分析多张图片中的物品，结合用户描述返回结构化结果
+    func analyzeImages(
+        base64Images: [String],
+        mimeType: String = "image/jpeg",
+        userContext: String
+    ) async throws -> AIResponse {
         let systemPrompt = """
-        你是一个物品识别助手。分析图片中的主要物品，返回如下 JSON 格式（必须使用英文 key）：
+        你是一个物品识别助手。用户会说一句话描述这个物品（可能包含物品名称、存放位置等）。
+        请结合用户提供的信息和多张图片内容，给出更准确的分析结果。
+        如果用户描述与图片内容不符，以图片为准，但在描述中礼貌地指出差异。
+
+        返回如下 JSON 格式（必须使用英文 key）：
         {
           "name": "物品名称",
           "description": "外观特征描述（颜色、形状、材质、大小）",
@@ -33,12 +41,23 @@ struct AIService {
         }
         注意：keywords 的 key 用中文，value 用中文。name、description、scene、emoji 的 value 用中文/emoji。
         emoji 必须是一个最能代表该物品的 emoji 字符。
+        scene 字段请结合用户提到的位置信息。
         """
 
-        let userContent: [[String: Any]] = [
-            ["type": "image_url", "image_url": ["url": "data:\(mimeType);base64,\(base64Image)"]],
-            ["type": "text", "text": "请识别这张图片中的主要物品，返回物品名称、外观特征描述（颜色/形状/材质/大小）、所在场景描述，以及 3-5 个关键词（颜色、品类、位置等）用于后续搜索。"]
-        ]
+        var userContent: [[String: Any]] = []
+
+        // 添加所有图片
+        for base64 in base64Images {
+            userContent.append([
+                "type": "image_url",
+                "image_url": ["url": "data:\(mimeType);base64,\(base64)"]
+            ])
+        }
+
+        // 用户一句话描述
+        let contextText = "用户描述：\(userContext)\n\n请结合用户描述和这些图片（同一物品的不同角度），识别图片中的主要物品，返回物品名称、外观特征描述（颜色/形状/材质/大小）、所在场景描述，以及 3-5 个关键词（颜色、品类、位置等）用于后续搜索。"
+
+        userContent.append(["type": "text", "text": contextText])
 
         return try await chatCompletion(
             systemPrompt: systemPrompt,

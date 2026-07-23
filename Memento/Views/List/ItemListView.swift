@@ -99,8 +99,8 @@ struct ItemListView: View {
     private func deleteItem(_ item: Item) {
         guard let id = item.id else { return }
 
-        // 删除图片文件
-        DatabaseService.deleteImage(at: item.imagePath)
+        // 删除所有图片文件
+        DatabaseService.deleteImages(at: item.imagePaths)
 
         // 删除数据库记录
         do {

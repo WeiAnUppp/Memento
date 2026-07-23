@@ -37,15 +37,31 @@ struct ItemCard: View {
 
     @ViewBuilder
     private var thumbnailView: some View {
-        if let imagePath = item.imagePath,
-           let url = DatabaseService.imageURL(for: imagePath),
+        let paths = item.imagePaths
+        if let firstPath = paths.first,
+           let url = DatabaseService.imageURL(for: firstPath),
            let data = try? Data(contentsOf: url),
            let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            ZStack(alignment: .bottomTrailing) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                // 多图计数角标
+                if paths.count > 1 {
+                    Text("\(paths.count)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Circle().fill(.blue))
+                        .offset(x: 4, y: 4)
+                }
+            }
+            .frame(width: 64, height: 64)
         } else {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.quaternary)

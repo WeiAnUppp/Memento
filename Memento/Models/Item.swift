@@ -25,4 +25,14 @@ struct Item: Identifiable, Codable, Equatable {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+
+    /// 多图路径（兼容旧单值格式和 JSON 数组格式）
+    var imagePaths: [String] {
+        guard let imagePath, !imagePath.isEmpty else { return [] }
+        if imagePath.hasPrefix("[") {
+            return (try? JSONDecoder().decode([String].self, from: Data(imagePath.utf8))) ?? []
+        } else {
+            return [imagePath]
+        }
+    }
 }

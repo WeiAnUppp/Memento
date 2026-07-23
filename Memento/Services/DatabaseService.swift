@@ -410,4 +410,11 @@ final class DatabaseService {
         guard let path, let url = imageURL(for: path) else { return }
         try? FileManager.default.removeItem(at: url)
     }
+
+    /// 批量删除多张图片
+    static func deleteImages(at paths: [String]) {
+        for path in paths {
+            deleteImage(at: path)
+        }
+    }
 }
