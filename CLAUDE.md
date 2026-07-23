@@ -324,6 +324,32 @@ var friendlyChineseFormat: String {
 }
 ```
 
+### 底部栏变身 — 记录物品融入搜索栏（2026-07-23 实现）
+
+**设计目标**：消除"记录物品"独立 sheet 的割裂感，将记录功能融入底部搜索栏。
+
+**架构**：
+- `ContentView` 持有 `CaptureViewModel`，底部栏基于 `captureViewModel.state` 切换模式
+- 拍照/选图后底部栏从搜索模式切换为记录模式，不再弹出 CaptureView sheet
+- 照片卡片和 AI 结果作为浮层（overlay）显示在底部栏上方
+- 顶部栏在记录时显示 ✕ 取消按钮，替代汉堡菜单
+
+**底部栏模式对照**：
+
+| CaptureState | 底部栏 | 浮层 |
+|---|---|---|
+| `.idle` / `.saved` | 搜索栏 `[🔍 搜索... 🎤] [+]` | 无 |
+| `.readyForInput` | `[🎤 描述...] [📷+] [✨识别]` | PhotoCardStack |
+| `.analyzing` | `[AI 正在识别… ⏳]` | AnalysisOverlay |
+| `.preview` | `[物品名称] [💾保存]` | AIResultOverlay |
+| `.saving` | `[正在保存… ⏳]` | SavingOverlay |
+| `.error` | `[🔄重试] [✕关闭]` | CaptureErrorOverlay |
+
+**涉及文件**：
+- `ContentView.swift` — 核心重构，底部栏模式切换 + 浮层 + 流程连接
+- `Views/Components/CaptureOverlay.swift` — 提取的可复用 UI（PhotoCardStack, AnalysisOverlay, AIResultOverlay, CaptureErrorOverlay, SavingOverlay）
+- `CaptureView.swift` — 保留文件但不再被 ContentView 使用（可后续清理）
+
 ### 待实现
 - 搜索功能（Day 10）
 - 语音输入/播报（Day 11）

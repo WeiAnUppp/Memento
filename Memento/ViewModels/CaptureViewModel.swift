@@ -220,9 +220,12 @@ final class CaptureViewModel {
                 base64Images: base64List,
                 userContext: userContext
             )
+            // 防止用户在分析期间取消导致状态错乱
+            guard case .analyzing = state else { return }
             editedName = response.name
             state = .preview(response)
         } catch {
+            guard case .analyzing = state else { return }
             state = .error("AI 识别失败: \(error.localizedDescription)")
         }
     }
