@@ -68,9 +68,9 @@ struct ContentView: View {
         return false
     }
 
-    /// 设置页有自己的顶栏，记录时全屏遮罩不需要顶栏
+    /// 设置页有自己的顶栏，记录时 ContentView 顶栏覆盖上来（变灰不可点）
     private var showCustomTopBar: Bool {
-        selectedPage != .settings && !isRecording
+        selectedPage != .settings || isRecording
     }
 
     /// 底部栏可见性：记录时始终显示

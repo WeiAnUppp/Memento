@@ -53,9 +53,9 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top) {
-                if !hideTopBar {
-                    settingsTopBar
-                }
+                settingsTopBar
+                    .opacity(hideTopBar ? 0 : 1)
+                    .disabled(hideTopBar)
             }
             .navigationDestination(for: SettingsPage.self) { page in
                 switch page {
