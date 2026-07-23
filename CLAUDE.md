@@ -256,6 +256,7 @@ CREATE TABLE items (
 - [x] iCloud 同步：不做
 - [x] 地图大头针视觉风格：蓝色 mappin.circle.fill + 玻璃胶囊名称标签
 - [x] 列表页：ItemCard 缩略图卡片 + 滑动删除 + 下拉刷新
+- [x] 列表页设计定稿（2026-07-23）：缩略图 + 名称 + 位置·时间，白色填充卡片 + 细线描边
 - [ ] 物品分类体系（AI 自动分类 vs 用户手动标签）
 
 ## 当前实现笔记（2026-07-22）
@@ -290,9 +291,38 @@ CREATE TABLE items (
 - DatabaseService 串行队列保证线程安全
 - 图片存 Documents/MementoImages/，数据库只记文件名
 
-### 列表页
-- ItemCard 缩略图卡片 + 滑动删除 + 下拉刷新
-- 删除后回调 `onDataChanged` → 地图实时刷新
+### 列表页（2026-07-23 设计定稿）
+
+**布局**：左侧 64×64 缩略图 + 右侧名称(.headline) + 下方位置·日期(.subheadline)
+```
+┌──────────────────────────────────────┐
+│ ┌──────────┐                         │
+│ │  缩略图  │  钥匙                    │
+│ │  64×64   │  玄关 · 7月21日          │
+│ └──────────┘                         │
+└──────────────────────────────────────┘
+```
+
+**设计决策**：
+- 内容层不用 glassEffect（符合设计原则第1条：玻璃仅用于导航/交互层）
+- 卡片用 `.background(.background, in: RoundedRect)` 白色填充 + `.quaternary` 细线描边
+- 列表页背景 `.systemGroupedBackground`，与设置页统一
+- 列表行 `.listRowBackground(Color.clear)` 让页面背景透出
+- 无图时显示 emoji 占位符（`item.emoji ?? "📦"`）
+
+**全年龄/老年群体考量**：
+- 最小字号 `.subheadline`（15pt），禁用 `.caption` / `.caption2`
+- 日期用中文友好格式（`Date.friendlyChineseFormat`：今天/昨天/M月d日）
+- 场景名直接显示，不用 icon+label 增加认知负担
+- 卡片有清晰边框 + 白色填充，对比度高
+- 64×64 缩略图够大，老年用户能看清
+
+**日期格式化**（`Extensions.swift`）：
+```swift
+var friendlyChineseFormat: String {
+    // 今天 HH:mm / 昨天 HH:mm / M月d日 / yyyy年M月d日
+}
+```
 
 ### 待实现
 - 搜索功能（Day 10）
