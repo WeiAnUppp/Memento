@@ -9,21 +9,24 @@ import SwiftUI
 
 struct ItemListView: View {
     var onDataChanged: (() -> Void)?
+    var onBarVisibilityChange: ((Bool) -> Void)?
 
     @State private var items: [Item] = []
     @State private var selectedItem: Item?
     @State private var showDetail = false
+    @State private var accumulatedScrollDelta: CGFloat = 0
 
     private let dbService = DatabaseService.shared
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if items.isEmpty {
                 emptyView
             } else {
                 listView
             }
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .onAppear { loadItems() }
         .sheet(isPresented: $showDetail) {
             if let item = selectedItem {
@@ -56,6 +59,21 @@ struct ItemListView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, 66, for: .scrollContent)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { oldValue, newValue in
+            accumulatedScrollDelta += newValue - oldValue
+
+            if accumulatedScrollDelta > 50 {
+                onBarVisibilityChange?(false)
+                accumulatedScrollDelta = 0
+            } else if accumulatedScrollDelta < -50 {
+                onBarVisibilityChange?(true)
+                accumulatedScrollDelta = 0
+            }
+        }
         .refreshable {
             loadItems()
         }

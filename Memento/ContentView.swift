@@ -48,9 +48,15 @@ struct ContentView: View {
         selectedPage != .settings
     }
 
-    /// 底部搜索栏：设置页子页面隐藏，其他始终显示
+    /// 列表页滚动时隐藏底部栏
+    @State private var listBarHidden = false
+
+    /// 底部搜索栏：设置页子页面隐藏，列表滚动时隐藏
     private var showBottomBar: Bool {
         if selectedPage == .settings && settingsNavigationDepth > 0 {
+            return false
+        }
+        if selectedPage == .list && listBarHidden {
             return false
         }
         return true
@@ -113,6 +119,9 @@ struct ContentView: View {
             if !showing, pendingImage != nil {
                 showProcessingSheet = true
             }
+        }
+        .onChange(of: selectedPage) { _, _ in
+            listBarHidden = false
         }
     }
 
@@ -198,10 +207,16 @@ struct ContentView: View {
                 .allowsHitTesting(selectedPage == .map)
 
             if selectedPage == .list {
-                ItemListView(onDataChanged: {
-                    mapViewModel.loadItems()
-                })
-                .padding(.top, 66)
+                ItemListView(
+                    onDataChanged: {
+                        mapViewModel.loadItems()
+                    },
+                    onBarVisibilityChange: { visible in
+                        withAnimation(.smooth(duration: 0.35)) {
+                            listBarHidden = !visible
+                        }
+                    }
+                )
             }
 
             if selectedPage == .settings {
