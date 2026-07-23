@@ -100,7 +100,7 @@ struct ContentView: View {
             }
             .presentationDragIndicator(.hidden)
         }
-        // 拍照/选图后 → AI 处理
+        // 拍照/选图后 → AI 处理（半屏）
         .sheet(isPresented: $showProcessingSheet) {
             if let image = pendingImage {
                 CaptureView(preselectedImage: image) {
@@ -108,6 +108,8 @@ struct ContentView: View {
                     pendingImage = nil
                     mapViewModel.loadItems()
                 }
+                .presentationDetents([.fraction(0.65)])
+                .presentationDragIndicator(.hidden)
             }
         }
         // 确保无论何种方式关闭 ProcessingSheet 都清掉 pendingImage
