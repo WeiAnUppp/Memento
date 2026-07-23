@@ -110,6 +110,10 @@ struct ContentView: View {
                 }
             }
         }
+        // 确保无论何种方式关闭 ProcessingSheet 都清掉 pendingImage
+        .onChange(of: showProcessingSheet) { _, showing in
+            if !showing { pendingImage = nil }
+        }
         .onChange(of: showCameraSheet) { _, showing in
             if !showing, pendingImage != nil {
                 showProcessingSheet = true
