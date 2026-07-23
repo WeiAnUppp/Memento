@@ -261,13 +261,17 @@ CREATE TABLE items (
 
 ## 当前实现笔记（2026-07-22）
 
-### 已完成闭环
+### 已完成闭环（更新：2026-07-23）
 ```
-点"+"打开菜单 → 相机/相册 → ImagePicker 提取照片EXIF GPS
-  → MiMo v2.5 图像识别 → AIResponse 解析（含 emoji 推荐）
-  → CaptureView 预览（可编辑名称+备注，展示 AI 推荐 emoji）
-  → 保存：图片→磁盘 / 数据→SQLite（含embedding BLOB + emoji）/ 地图自动刷新
+点"+"打开菜单 → 相机/相册 → 底部栏变身记录模式
+  → 输入描述文字（支持语音） → 点 ✨ 识别
+  → ✨ 三阶段退出动画（键盘收起 → ✨缩进 → 搜索栏展开）
+  → 左上角旋转圆点图标（SpinningDotsButton，所有页面可见）
+  → MiMo v2.5 后台分析 + 自动保存
+  → 旋转图标消失 + 地图自动定位到物品 GPS 坐标
 ```
+
+旧流程（CaptureView 前台预览保存）保留作为 retry 兼容路径。
 
 ### 地图 & 大头针
 - **MapKitView**：`UIViewRepresentable` 包裹 `MKMapView`（非 SwiftUI Map），原因：
@@ -341,19 +345,51 @@ var friendlyChineseFormat: String {
 | `.idle` / `.saved` | 搜索栏 `[🔍 搜索... 🎤] [+]` | 无 |
 | `.readyForInput` | `[🎤 描述...] [📷+] [✨识别]` | PhotoCardStack |
 | `.analyzing` | `[AI 正在识别… ⏳]` | AnalysisOverlay |
+| `.backgroundAnalyzing` | 搜索栏 `[🔍 搜索... 🎤] [+]` | 无（正常地图 UI） |
 | `.preview` | `[物品名称] [💾保存]` | AIResultOverlay |
 | `.saving` | `[正在保存… ⏳]` | SavingOverlay |
 | `.error` | `[🔄重试] [✕关闭]` | CaptureErrorOverlay |
 
 **涉及文件**：
 - `ContentView.swift` — 核心重构，底部栏模式切换 + 浮层 + 流程连接
-- `Views/Components/CaptureOverlay.swift` — 提取的可复用 UI（PhotoCardStack, AnalysisOverlay, AIResultOverlay, CaptureErrorOverlay, SavingOverlay）
+- `Views/Components/CaptureOverlay.swift` — 提取的可复用 UI（PhotoCardStack, AnalysisOverlay, AIResultOverlay, CaptureErrorOverlay, SavingOverlay, AnalysisProgressSheet）
+- `Views/Components/SpinningDotsButton.swift` — 左上角旋转圆点后台分析指示器（所有页面可见）
 - `CaptureView.swift` — 保留文件但不再被 ContentView 使用（可后续清理）
+
+### AI 后台分析 + 自动定位（2026-07-23 实现）
+
+**设计目标**：点 ✨ 后立即退出记录页面，API 调用在后台运行，分析完成后自动保存并定位地图。
+
+**核心变更**：
+- `CaptureState` 新增 `.backgroundAnalyzing` case — API 调用中，UI 已退出
+- `CaptureViewModel.proceedToAnalysis()` → 捕获数据 → 立即设 `.backgroundAnalyzing` → 启动后台 Task
+- `performBackgroundAnalysis()` → API 调用 → 成功后自动调用 `saveItem()` → `.saved`
+- 保存后 `MapViewModel.focusOnItem()` → 地图自动平移到物品 GPS 坐标
+
+**旋转圆点指示器**：
+- `SpinningDotsView`：8 个 SF Symbol `circle.fill` 圆点绕圆环旋转（7s 一圈，linear）
+- `SpinningDotsButton`：50×50 玻璃圆按钮，`.tint(.primary)` 与筛选图标颜色一致
+- 点击弹出 `AnalysisProgressSheet`（medium detent）：显示分析中图片 + 进度文字
+- 分析完成后图标自动消失
+
+**动画时序**：
+```
+有键盘时：键盘收起(0.28s) → ✨缩进(0.22s) → 搜索栏展开(0.40s)
+无键盘时：✨缩进(0.22s) → 搜索栏展开(0.40s)  // 无键盘延迟，直接开始
+```
+
+**涉及文件**：
+- `CaptureViewModel.swift` — `.backgroundAnalyzing` 状态、`performBackgroundAnalysis()`、`saveItem()`
+- `ContentView.swift` — `isRecording` 排除 `.backgroundAnalyzing`、三阶段动画、进度 sheet
+- `MapViewModel.swift` — `focusOnCoordinate()`、`focusTrigger`
+- `MapHomeView.swift` / `MapKitView.swift` — 坐标聚焦参数传递
+- `Views/Components/SpinningDotsButton.swift` — 新建
+- `Views/Components/CaptureOverlay.swift` — `AnalysisProgressSheet`
 
 ### 待实现
 - 搜索功能（Day 10）
-- 语音输入/播报（Day 11）
-- Liquid Glass 动画打磨（Day 14-15）
+- 语音播报 TTS（Day 11，语音输入已完成）
+- Liquid Glass 动画打磨（Day 14-15，录制退出动画已完成）
 - 演示视频录制（Day 18-19）
 
 ## 复赛文档 & 视频要点
