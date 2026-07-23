@@ -37,7 +37,6 @@ enum SettingsPage: Hashable {
 struct SettingsView: View {
     @Binding var selectedPage: AppPage
     @Binding var navigationDepth: Int
-    var hideTopBar: Bool = false
 
     @State private var config = APIConfig()
     @State private var path = NavigationPath()
@@ -54,8 +53,6 @@ struct SettingsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top) {
                 settingsTopBar
-                    .opacity(hideTopBar ? 0 : 1)
-                    .disabled(hideTopBar)
             }
             .navigationDestination(for: SettingsPage.self) { page in
                 switch page {

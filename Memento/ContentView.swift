@@ -68,9 +68,9 @@ struct ContentView: View {
         return false
     }
 
-    /// 设置页有自己的顶栏，记录时 ContentView 顶栏覆盖上来（变灰不可点）
+    /// 设置页有自己的顶栏，不需要 ContentView 覆盖
     private var showCustomTopBar: Bool {
-        selectedPage != .settings || isRecording
+        selectedPage != .settings
     }
 
     /// 底部栏可见性：记录时始终显示
@@ -684,8 +684,7 @@ struct ContentView: View {
             if selectedPage == .settings {
                 SettingsView(
                     selectedPage: $selectedPage,
-                    navigationDepth: $settingsNavigationDepth,
-                    hideTopBar: isRecording
+                    navigationDepth: $settingsNavigationDepth
                 )
                 .disabled(isRecording)
             }
