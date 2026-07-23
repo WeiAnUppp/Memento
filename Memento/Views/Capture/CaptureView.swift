@@ -231,7 +231,7 @@ struct CaptureView: View {
     private var inputCard: some View {
         HStack(spacing: 10) {
             voiceButton
-            TextField("描述一下这个物品…", text: $viewModel.userContext)
+            TextField("简单描述一下...", text: $viewModel.userContext)
                 .textFieldStyle(.plain)
                 .font(.title3)
         }

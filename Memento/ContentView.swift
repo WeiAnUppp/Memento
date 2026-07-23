@@ -48,6 +48,8 @@ struct ContentView: View {
     /// 遮罩+浮层动画专用 Bool — 与 ViewModel 状态解耦，确保动画事务正确传播
     @State private var showRecordingOverlay = false
 
+    /// 输入框焦点，用于键盘动画收起
+    @FocusState private var isDescriptionFocused: Bool
     /// 照片卡片交互状态
     @State private var photoCardIndex = 0
     @State private var photoDragOffset: CGSize = .zero
@@ -99,15 +101,20 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.55 : 0.35) : 0)
                 .allowsHitTesting(showRecordingOverlay)
-                .onTapGesture { dismissRecording() }
+                .onTapGesture {
+                    isDescriptionFocused = false
+                    dismissRecording()
+                }
                 .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
 
-            // 顶层：自定义顶栏
+            // 顶层：自定义顶栏 — 记录时变灰不可交互，tap 穿透到遮罩退出
             if showCustomTopBar {
                 VStack(spacing: 0) {
                     customTopBar
                     Spacer()
                 }
+                .opacity(isRecording ? 0.45 : 1)
+                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: isRecording)
             }
 
             // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
@@ -229,6 +236,7 @@ struct ContentView: View {
             }
             .glassEffect(.regular.interactive(), in: .circle)
             .tint(.primary)
+            .disabled(isRecording)
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -292,9 +300,16 @@ struct ContentView: View {
         if isInput {
             // 描述输入
             HStack(spacing: 8) {
-                TextField("描述一下这个物品…", text: $captureViewModel.userContext)
-                    .textFieldStyle(.plain)
-                    .font(.body)
+                ZStack(alignment: .leading) {
+                    TextField("", text: $captureViewModel.userContext)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .focused($isDescriptionFocused)
+
+                    if captureViewModel.userContext.isEmpty {
+                        shimmerPlaceholder
+                    }
+                }
 
                 Button {
                     if captureViewModel.speechService.isRecording {
@@ -339,6 +354,56 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .tint(.primary)
         }
+    }
+
+    // MARK: - Shimmer Placeholder
+
+    /// 文字渐变流光 — 2 根光带交替扫过，慢速丝滑无缝循环
+    private var shimmerPlaceholder: some View {
+        let isDark = colorScheme == .dark
+        let dimOpacity: Double = isDark ? 0.10 : 0.18
+        let peakOpacity: Double = isDark ? 0.52 : 0.65
+        let bandHalf: Double = 0.12
+
+        return TimelineView(.animation) { timeline in
+            let seconds = timeline.date.timeIntervalSince1970
+            let phase = seconds.truncatingRemainder(dividingBy: 8.0) / 8.0
+
+            Text("简单描述一下...")
+                .font(.body)
+                .foregroundStyle(gradient(for: phase, dim: dimOpacity, peak: peakOpacity, bandHalf: bandHalf))
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 生成 2 光带梯度，位置包裹到 [0,1] 后排好序，首尾颜色一致确保无缝
+    private func gradient(
+        for phase: Double,
+        dim dimOpacity: Double,
+        peak peakOpacity: Double,
+        bandHalf: Double
+    ) -> LinearGradient {
+        let wrap: (Double) -> Double = { ($0.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1) }
+
+        var stops: [Gradient.Stop] = []
+        for i in 0..<2 {
+            let c = wrap(phase + Double(i) / 2)
+            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c - bandHalf)))
+            stops.append(.init(color: .primary.opacity(peakOpacity), location: c))
+            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c + bandHalf)))
+        }
+
+        stops.sort { $0.location < $1.location }
+
+        // 首尾颜色一致 → 边界无缝
+        if let first = stops.first, first.location > 0.001 {
+            stops.insert(.init(color: stops.last!.color, location: 0), at: 0)
+        }
+        if let last = stops.last, last.location < 0.999 {
+            stops.append(.init(color: stops.first!.color, location: 1))
+        }
+
+        return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
     }
 
     // MARK: - Shared + Button
@@ -600,7 +665,7 @@ struct ContentView: View {
             // 地图始终保持在视图树中，切换页面时位置/缩放不丢失
             MapHomeView(viewModel: mapViewModel, locationService: locationService)
                 .opacity(selectedPage == .map ? 1 : 0)
-                .allowsHitTesting(selectedPage == .map && !isRecording)
+                .disabled(isRecording)
 
             if selectedPage == .list {
                 ItemListView(
@@ -613,8 +678,7 @@ struct ContentView: View {
                         }
                     }
                 )
-                .opacity(isRecording ? 0.6 : 1)
-                .allowsHitTesting(!isRecording)
+                .disabled(isRecording)
             }
 
             if selectedPage == .settings {
@@ -622,8 +686,7 @@ struct ContentView: View {
                     selectedPage: $selectedPage,
                     navigationDepth: $settingsNavigationDepth
                 )
-                .opacity(isRecording ? 0.6 : 1)
-                .allowsHitTesting(!isRecording)
+                .disabled(isRecording)
             }
         }
     }
