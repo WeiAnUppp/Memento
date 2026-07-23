@@ -94,7 +94,8 @@ struct SettingsView: View {
             .tint(.primary)
         }
         .padding(.horizontal, 16)
-        .frame(height: 44)
+        .padding(.top, 4)
+        .padding(.bottom, 0)
     }
 
     // MARK: - 外观 Section
