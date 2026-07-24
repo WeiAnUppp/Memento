@@ -74,12 +74,12 @@ struct CaptureView: View {
             }
         }
         .sheet(isPresented: $showAddCamera) {
-            CameraHalfView { image, gps in viewModel.addImage(image, gps: gps) }
+            CameraHalfView { image, gps, takenAt in viewModel.addImage(image, gps: gps, takenAt: takenAt) }
                 .presentationDetents([.fraction(0.65)])
                 .presentationDragIndicator(.hidden)
         }
         .sheet(isPresented: $showAddPhotoLibrary) {
-            PhotoHalfView { image, gps in viewModel.addImage(image, gps: gps) }
+            PhotoHalfView { image, gps, takenAt in viewModel.addImage(image, gps: gps, takenAt: takenAt) }
                 .presentationDragIndicator(.hidden)
         }
         .confirmationDialog("添加图片", isPresented: $showAddPhotoMenu) {

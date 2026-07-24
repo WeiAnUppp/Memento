@@ -40,6 +40,8 @@ struct ContentView: View {
     @State private var pendingImage: UIImage?
     /// 图片 EXIF GPS（如有）
     @State private var pendingImageGPS: CLLocationCoordinate2D?
+    /// 照片拍摄时间（相册取 PHAsset.creationDate，相机取 nil=现在）
+    @State private var pendingImageDate: Date?
 
     /// 地图共享状态 —— 提升到 ContentView，页面切换时 cameraPosition / items 不丢失
     @State private var mapViewModel = MapViewModel()
@@ -192,18 +194,20 @@ struct ContentView: View {
         }
         // 相机半屏
         .sheet(isPresented: $showCameraSheet) {
-            CameraHalfView { image, gps in
+            CameraHalfView { image, gps, date in
                 pendingImage = image
                 pendingImageGPS = gps
+                pendingImageDate = date
             }
             .presentationDetents([.fraction(0.65)])
             .presentationDragIndicator(.hidden)
         }
         // 照片半屏
         .sheet(isPresented: $showPhotoSheet) {
-            PhotoHalfView { image, gps in
+            PhotoHalfView { image, gps, date in
                 pendingImage = image
                 pendingImageGPS = gps
+                pendingImageDate = date
             }
             .presentationDragIndicator(.hidden)
         }
@@ -268,15 +272,17 @@ struct ContentView: View {
     private func handlePhotoCaptured() {
         guard let image = pendingImage else { return }
         let gps = pendingImageGPS
+        let date = pendingImageDate
         if isAddingMorePhotos {
-            captureViewModel.addImage(image, gps: gps)
+            captureViewModel.addImage(image, gps: gps, takenAt: date)
             photoCardIndex = max(captureViewModel.selectedImages.count - 1, 0)
         } else {
-            captureViewModel.didSelectFirstImage(image, gps: gps)
+            captureViewModel.didSelectFirstImage(image, gps: gps, takenAt: date)
             photoCardIndex = 0
         }
         pendingImage = nil
         pendingImageGPS = nil
+        pendingImageDate = nil
     }
 
     // MARK: - Dismiss Recording

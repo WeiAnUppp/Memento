@@ -13,7 +13,8 @@ import Foundation
 enum SearchIndexService {
 
     /// 当前索引版本。修改 embedding 文本构造逻辑时递增，触发重建。
-    private static let currentVersion = 2
+    /// v3：embedding 文本纳入 nearbyObjects（周围物品），支撑空间关系查询。
+    private static let currentVersion = 3
     private static let versionKey = "searchIndexVersion"
 
     /// 若本地索引版本落后则重建（后台线程，best-effort，失败不影响使用）
@@ -39,7 +40,8 @@ enum SearchIndexService {
                         from: item.name,
                         description: item.itemDescription,
                         keywords: item.keywords,
-                        scene: item.scene
+                        scene: item.scene,
+                        nearbyObjects: item.nearbyObjects
                     )
                     let vector = embedder.vector(for: text)
                     try? db.updateEmbedding(id: id, embedding: vector)

@@ -30,6 +30,8 @@ final class CaptureViewModel {
     // 多图支持
     var selectedImages: [UIImage] = []
     private var photoGPSs: [CLLocationCoordinate2D?] = []
+    /// 每张图的拍摄时间（相册取 EXIF/PHAsset，相机为 nil=保存时刻）。第一张决定记录时间。
+    private var photoDates: [Date?] = []
 
     // 用户一句话描述（AI 分析前填写）
     var userContext: String = ""
@@ -91,9 +93,10 @@ final class CaptureViewModel {
     // MARK: - Public API
 
     /// 添加新图片（相机拍照或相册选图）
-    func addImage(_ image: UIImage, gps: CLLocationCoordinate2D?) {
+    func addImage(_ image: UIImage, gps: CLLocationCoordinate2D?, takenAt: Date? = nil) {
         selectedImages.append(image)
         photoGPSs.append(gps)
+        photoDates.append(takenAt)
         if case .idle = state {
             state = .readyForInput
         }
@@ -105,6 +108,9 @@ final class CaptureViewModel {
         selectedImages.remove(at: index)
         if index < photoGPSs.count {
             photoGPSs.remove(at: index)
+        }
+        if index < photoDates.count {
+            photoDates.remove(at: index)
         }
         // 如果图片全部被删除，回到 idle
         if selectedImages.isEmpty {
@@ -134,9 +140,10 @@ final class CaptureViewModel {
     }
 
     /// 兼容旧接口：直接传第一张图（来自外部调用）
-    func didSelectFirstImage(_ image: UIImage, gps: CLLocationCoordinate2D?) {
+    func didSelectFirstImage(_ image: UIImage, gps: CLLocationCoordinate2D?, takenAt: Date? = nil) {
         selectedImages = [image]
         photoGPSs = [gps]
+        photoDates = [takenAt]
         state = .readyForInput
     }
 
@@ -184,17 +191,27 @@ final class CaptureViewModel {
             ? nil
             : (try? JSONEncoder().encode(imagePaths)).flatMap { String(data: $0, encoding: .utf8) }
 
+        // 周围物品 → 顿号分隔字符串（空数组存 nil）
+        let nearbyStr: String? = {
+            guard let objs = response.nearbyObjects else { return nil }
+            let cleaned = objs
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return cleaned.isEmpty ? nil : cleaned.joined(separator: "、")
+        }()
+
         var item = Item(
             name: name,
             itemDescription: response.description,
             keywords: jsonString(from: response.keywords),
             scene: response.scene.isEmpty ? nil : response.scene,
+            nearbyObjects: nearbyStr,
             userNote: userContext.isEmpty ? nil : userContext,
             latitude: lat,
             longitude: lon,
             emoji: response.emoji,
             imagePath: imagePathJSON,
-            createdAt: Date(),
+            createdAt: photoDates.first.flatMap { $0 } ?? Date(),
             updatedAt: Date()
         )
 
@@ -203,7 +220,8 @@ final class CaptureViewModel {
             from: item.name,
             description: item.itemDescription,
             keywords: item.keywords,
-            scene: item.scene
+            scene: item.scene,
+            nearbyObjects: item.nearbyObjects
         )
         let embedding = embeddingService.vector(for: text)
 
@@ -222,10 +240,12 @@ final class CaptureViewModel {
     func retry() {
         let images = selectedImages
         let gps = photoGPSs
+        let dates = photoDates
         let context = userContext
         reset()
         selectedImages = images
         photoGPSs = gps
+        photoDates = dates
         userContext = context
         state = .readyForInput
     }
@@ -234,6 +254,7 @@ final class CaptureViewModel {
         state = .idle
         selectedImages = []
         photoGPSs = []
+        photoDates = []
         userContext = ""
         editedName = ""
         analyzingImage = nil

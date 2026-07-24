@@ -115,6 +115,11 @@ struct SearchResultView: View {
 
     // MARK: - Results List
 
+    @State private var showWeakResults = false
+
+    private var strongResults: [SearchResult] { results.filter { $0.isStrong } }
+    private var weakResults: [SearchResult] { results.filter { !$0.isStrong } }
+
     private var resultsList: some View {
         VStack(spacing: 0) {
             // TTS 播报栏
@@ -122,23 +127,63 @@ struct SearchResultView: View {
                 ttsBar(text: suggestion)
             }
 
-            // 结果列表
+            // 结果列表：高置信直接展示，弱相关折叠进"可能相关"
             List {
-                ForEach(results) { result in
-                    Button {
-                        onResultSelected(result.item)
-                    } label: {
-                        SearchResultCard(result: result)
+                ForEach(strongResults) { result in
+                    resultRow(result)
+                }
+
+                if !weakResults.isEmpty {
+                    Section {
+                        if showWeakResults {
+                            ForEach(weakResults) { result in
+                                resultRow(result)
+                            }
+                        }
+                    } header: {
+                        weakSectionHeader
                     }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    private func resultRow(_ result: SearchResult) -> some View {
+        Button {
+            onResultSelected(result.item)
+        } label: {
+            SearchResultCard(result: result)
+        }
+        .buttonStyle(.plain)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
+
+    private var weakSectionHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { showWeakResults.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: showWeakResults ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                Text("可能相关（\(weakResults.count)）")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                if !showWeakResults {
+                    Text("置信度较低")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 4, trailing: 16))
     }
 
     // MARK: - TTS Bar
@@ -339,24 +384,40 @@ struct SearchResultCard: View {
 
     // MARK: - Score Badge
 
+    @ViewBuilder
     private var scoreBadge: some View {
-        let pct = Int(result.score * 100)
-        let color: Color = {
-            if result.score >= 0.7 { return .green }
-            if result.score >= 0.4 { return .orange }
-            return .secondary
-        }()
+        if result.isBrowse {
+            // 浏览模式是"列举"，不是"匹配"，展示时间标签而非误导性的百分比
+            let label = result.matchDetails?.timeRelevance ?? "浏览"
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.12))
+                )
+        } else {
+            let pct = Int(result.score * 100)
+            let color: Color = {
+                if result.score >= 0.7 { return .green }
+                if result.score >= 0.4 { return .orange }
+                return .secondary
+            }()
 
-        return Text("\(pct)%")
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(color.opacity(0.12))
-            )
+            Text("\(pct)%")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(color.opacity(0.12))
+                )
+        }
     }
 }
 

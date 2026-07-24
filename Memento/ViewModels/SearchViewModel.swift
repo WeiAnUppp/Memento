@@ -97,6 +97,7 @@ final class SearchViewModel {
             var expandedQueries: [String]? = nil
             var fuzzyDescription: String? = nil
             var queryIntent: String? = nil
+            var spatialAnchor: String? = nil
 
             if APIConfig().isConfigured {
                 do {
@@ -110,10 +111,15 @@ final class SearchViewModel {
                     expandedQueries = parsed.expandedQueries
                     fuzzyDescription = parsed.fuzzyDescription
                     queryIntent = parsed.queryIntent
+                    spatialAnchor = parsed.spatialAnchor?.trimmingCharacters(in: .whitespaces)
                     await MainActor.run { parsedKeywords = aiKeywords }
                 } catch {
                     print("[SearchViewModel] AI 解析失败，降级: \(error)")
                 }
+            }
+            // 无 API 时的空间关系兜底：从原句里抽取"X + 关系词"的参照物 X
+            if spatialAnchor == nil {
+                spatialAnchor = Self.extractSpatialAnchor(from: query)
             }
 
             // 调试：打印 AI 解析结果
@@ -126,15 +132,18 @@ final class SearchViewModel {
             print("[SearchViewModel] negativeKeywords: \(negativeKeywords ?? [])")
             print("[SearchViewModel] sortHint: \(sortHint ?? "nil")")
             print("[SearchViewModel] expandedQueries: \(expandedQueries ?? [])")
+            print("[SearchViewModel] spatialAnchor: \(spatialAnchor ?? "nil")")
             print("[SearchViewModel] ================")
 
-            // ── 阶段 2：地理编码（如有地名） ──
+            // ── 阶段 2：地理编码 ──
+            // 只对城市/区县级 locationName 做地理编码。
+            // 室内参照物（键盘/抽屉/桌上）走 spatialAnchor，绝不送 CLGeocoder：
+            // 它们不是地名，编码要么浪费一次网络请求，要么误配到某个真实坐标污染排序。
             let locationTarget: CLLocationCoordinate2D?
             if let name = locationName, !name.isEmpty {
                 locationTarget = await geocodeLocation(name)
             } else {
-                let locValue = aiKeywords["位置"] ?? aiKeywords["地点"] ?? ""
-                locationTarget = locValue.isEmpty ? nil : await geocodeLocation(locValue)
+                locationTarget = nil
             }
 
             // ── 阶段 3：向量化 ──
@@ -144,6 +153,7 @@ final class SearchViewModel {
                 // 有 AI 解析 → 使用 embeddingText（合并所有扩展词）
                 let sq = SearchQuery(
                     keywords: aiKeywords, searchText: searchText, locationName: locationName,
+                    spatialAnchor: spatialAnchor,
                     timeFilter: timeFilter, negativeKeywords: negativeKeywords,
                     sortHint: sortHint, queryIntent: queryIntent,
                     expandedQueries: expandedQueries, fuzzyDescription: fuzzyDescription
@@ -161,7 +171,23 @@ final class SearchViewModel {
                 return
             }
 
-            // ── 阶段 5：混合排序 ──
+            // ── 阶段 5：时间预过滤 ──
+            let timeRange = timeFilter?.dateRange()
+            let candidateItems: [(Item, [Float]?)]
+            if let range = timeRange {
+                candidateItems = itemsWithEmbeddings.filter { item, _ in
+                    item.createdAt >= range.start && item.createdAt <= range.end
+                }
+                if candidateItems.isEmpty {
+                    print("[SearchViewModel] 时间过滤后无结果")
+                    await MainActor.run { results = []; isSearching = false }
+                    return
+                }
+            } else {
+                candidateItems = itemsWithEmbeddings
+            }
+
+            // ── 阶段 6：混合排序 ──
             // coreTerms：用户真正想找的（AI 关键词值 + searchText 分词）→ 必须命中
             // expansionTerms：同义/相关词（AI expandedQueries + fuzzy + 本地词典）→ 命中加分
             var coreTerms: [String]
@@ -189,18 +215,38 @@ final class SearchViewModel {
                 coreTerms = tokenizeChinese(query)
                 expansionTerms = []
             }
+
+            // 关键净化：把空间关系词（旁边/附近/里面…）和泛指词（东西/物品…）踢出 coreTerms。
+            // 它们无区分度：要么永远匹配不上（拖低正确项覆盖率），要么误命中无关物品描述。
+            // 参照物本身走 spatialAnchor 的共位匹配，也从普通词里剔除，避免"键盘"把键盘本体顶到最前。
+            coreTerms = Self.stripNonDiscriminative(coreTerms, anchor: spatialAnchor)
+            expansionTerms = Self.stripNonDiscriminative(expansionTerms, anchor: spatialAnchor)
+
+            // 场景域兜底：查询含"家/公司/办公室…"但 AI 没提取进 coreTerms 时，主动注入，
+            // 保证"家里的东西"能靠场景过滤命中家中物品，而不是退化成向量全量匹配。
+            // 只注入【最长的一个】场景域词（避免"家/家里/家中"同时进入稀释覆盖率）；
+            // 且仅当 coreTerms 里还没有任何场景域词时才补。
+            let alreadyHasScope = coreTerms.contains { Self.sceneScopeWords.contains($0) }
+            if !alreadyHasScope,
+               let longest = Self.sceneScopeWords
+                   .filter({ query.contains($0) })
+                   .max(by: { $0.count < $1.count }) {
+                coreTerms.append(longest)
+            }
+
             // 本地同义词兜底扩展
             let localSyn = localSynonyms(for: coreTerms)
             expansionTerms = Array(Set(expansionTerms).union(localSyn).subtracting(coreTerms))
 
             let ranked = rankItems(
-                itemsWithEmbeddings: itemsWithEmbeddings,
+                itemsWithEmbeddings: candidateItems,
                 queryEmbedding: queryEmbedding,
                 coreTerms: coreTerms,
                 expansionTerms: expansionTerms,
                 aiKeywords: aiKeywords,
                 rawQuery: query,
                 locationTarget: locationTarget,
+                spatialAnchor: spatialAnchor,
                 timeFilter: timeFilter,
                 negativeKeywords: negativeKeywords,
                 sortHint: sortHint,
@@ -254,6 +300,7 @@ final class SearchViewModel {
         aiKeywords: [String: String],
         rawQuery: String,
         locationTarget: CLLocationCoordinate2D?,
+        spatialAnchor: String?,
         timeFilter: TimeFilter?,
         negativeKeywords: [String]?,
         sortHint: String?,
@@ -263,33 +310,26 @@ final class SearchViewModel {
         let hasAPI = APIConfig().isConfigured
         let queryChars = Set(rawQuery)
 
-        // ── ① 时间预过滤 ──
-        let timeRange = timeFilter?.dateRange()
-        var candidateItems: [(Item, [Float]?)]
-        if let range = timeRange {
-            candidateItems = itemsWithEmbeddings.filter { item, _ in
-                item.createdAt >= range.start && item.createdAt <= range.end
-            }
-            // 时间过滤后无结果 → 降级为不过滤（宽容策略）
-            if candidateItems.isEmpty {
-                print("[SearchViewModel] 时间过滤后无结果，降级为全量搜索")
-                candidateItems = itemsWithEmbeddings
-            }
-        } else {
-            candidateItems = itemsWithEmbeddings
-        }
+        // 时间过滤已在 doSearch 中完成，此处直接使用传入的候选列表
+        let candidateItems = itemsWithEmbeddings
 
         // 提前计算 AI 输出特征，用于模式判断
         let aiHasKeywords = !aiKeywords.isEmpty
         let aiHasLocation = locationTarget != nil
+        let hasAnchor = (spatialAnchor?.isEmpty == false)
 
-        // 浏览模式：显式意图 OR 纯时间查询（无物品关键词、无地点，仅时间过滤）
-        let isBrowseMode = queryIntent == "browse_recent"
-            || (timeFilter != nil && !aiHasKeywords && !aiHasLocation)
+        // 场景域词兜底：查询里出现"家/公司/办公室…"就【绝不进浏览】——
+        // 它是场景过滤条件，不是"列出全部"。防 AI 把"家里的东西"误判成 browse_recent。
+        let queryHasSceneScope = Self.sceneScopeWords.contains { rawQuery.contains($0) }
+
+        // 浏览模式：显式意图 OR 纯时间查询（无物品关键词、无地点，仅时间过滤）；有场景域词则一律排除
+        let isBrowseMode = !queryHasSceneScope
+            && (queryIntent == "browse_recent"
+                || (timeFilter != nil && !aiHasKeywords && !aiHasLocation))
 
         if isBrowseMode {
             let browsed = candidateItems.map { entry in
-                SearchResult(item: entry.0, score: 1.0,
+                SearchResult(item: entry.0, score: 1.0, isBrowse: true,
                     matchDetails: SearchResult.MatchDetails(
                         matchedFields: [], matchedKeywords: [],
                         nameMatched: false, locationDistance: nil,
@@ -303,10 +343,10 @@ final class SearchViewModel {
         // ── ② 文本排名 ──
         struct RankEntry {
             let item: Item
-            let embedding: [Float]?
             let textScore: Double      // 文本匹配分 [0, 1]
             let coverageScore: Double  // 查询字符覆盖率 [0, 1]（弱 tiebreaker）
-            let vectorScore: Double    // 余弦相似度 [0, 1]
+            var vectorScore: Double    // 对比归一化后的向量分 [0, 1]
+            let colocationScore: Double // 空间共位分 [0, 1]（参照物命中 nearbyObjects/scene）
             let matchedFields: [String]
             let matchedKeywords: [String]
             let nameMatched: Bool
@@ -318,23 +358,36 @@ final class SearchViewModel {
             return !Self.chineseStopWords.contains(s) && ch != " "
         }
 
-        var entries: [RankEntry] = []
+        // 第一遍：文本 / 覆盖 / 共位 / 原始余弦
+        var rawCosines: [Double] = []
+        var partials: [(item: Item, t: Double, c: Double, coloc: Double,
+                        fields: [String], kw: [String], nameHit: Bool)] = []
         for (item, embedding) in candidateItems {
             let (tScore, fields, keywords, nameHit) = multiFieldTextScore(
                 item: item, coreTerms: coreTerms, expansionTerms: expansionTerms
             )
             let cScore = charCoverage(queryChars: meaningfulQueryChars, item: item)
+            let coloc = colocationScore(anchor: spatialAnchor, item: item)
 
-            var vScore: Double = 0
+            var rawCos = 0.0
             if hasVector, let qEmb = queryEmbedding, let iEmb = embedding {
-                let sim = cosineSimilarity(qEmb, iEmb)
-                vScore = sim > 0 ? Double(sim) : 0
+                let sim = Double(cosineSimilarity(qEmb, iEmb))
+                rawCos = sim > 0 ? sim : 0
             }
+            rawCosines.append(rawCos)
+            partials.append((item, tScore, cScore, coloc, fields, keywords, nameHit))
+        }
 
+        // 向量对比归一化：把候选集内的余弦拉开差距 + 绝对语义地板。
+        // 解决"无关项靠 0.55 余弦混到 40%"的压缩问题。
+        let normCosines = normalizeVectorScores(rawCosines)
+
+        var entries: [RankEntry] = []
+        for (i, p) in partials.enumerated() {
             entries.append(RankEntry(
-                item: item, embedding: embedding,
-                textScore: tScore, coverageScore: cScore, vectorScore: vScore,
-                matchedFields: fields, matchedKeywords: keywords, nameMatched: nameHit
+                item: p.item, textScore: p.t, coverageScore: p.c,
+                vectorScore: normCosines[i], colocationScore: p.coloc,
+                matchedFields: p.fields, matchedKeywords: p.kw, nameMatched: p.nameHit
             ))
         }
 
@@ -379,7 +432,13 @@ final class SearchViewModel {
             let finalScore: Double
             let hasCore = !coreTerms.isEmpty
 
-            if aiHasLocation && !aiHasKeywords {
+            if hasAnchor && !aiHasLocation {
+                // ⭐ 空间关系查询（"键盘旁边的东西"）— 共位分绝对主导。
+                // 参照物命中物品的 nearbyObjects/scene = 强证据；文本(目标类型)与向量为辅。
+                // 没有共位证据的物品(如雨伞)拿不到主导分，自然被拉开。
+                let coloc = e.colocationScore
+                finalScore = (coloc * 0.60 + e.textScore * 0.18 + e.vectorScore * 0.17 + e.coverageScore * 0.05) * penalty
+            } else if aiHasLocation && !aiHasKeywords {
                 // ⭐ 纯位置查询（"在上海记录的"）— 位置绝对主导
                 let loc = locationRanks[itemId]?.score ?? 0
                 // 文本和向量仅作微弱 tiebreaker
@@ -387,13 +446,15 @@ final class SearchViewModel {
             } else if aiHasLocation && aiHasKeywords {
                 // ⭐ 位置+物品混合查询（"上海家里的钥匙"）— 位置重要但物品为主
                 let loc = locationRanks[itemId]?.score ?? 0
-                finalScore = (e.textScore * 0.45 + e.vectorScore * 0.15 + loc * 0.35 + e.coverageScore * 0.05) * penalty
+                let coloc = e.colocationScore * 0.10  // 共位小幅加分
+                finalScore = (e.textScore * 0.42 + e.vectorScore * 0.15 + loc * 0.33 + e.coverageScore * 0.05 + coloc) * penalty
             } else if aiHasKeywords || hasCore {
-                // ⭐ 物品查询（"黑色的钥匙"）— 文本主导，向量补语义，覆盖率兜底
-                finalScore = (e.textScore * 0.62 + e.vectorScore * 0.28 + e.coverageScore * 0.10) * penalty
+                // ⭐ 物品查询（"黑色的钥匙"）— 文本主导，向量补语义，覆盖率兜底，共位小幅加分
+                let coloc = e.colocationScore * 0.10
+                finalScore = min(1.0, e.textScore * 0.60 + e.vectorScore * 0.28 + e.coverageScore * 0.08 + coloc) * penalty
             } else if hasVector {
-                // ⭐ 模糊/无核心词 — 向量主导，覆盖率兜底
-                finalScore = (e.vectorScore * 0.70 + e.coverageScore * 0.30) * penalty
+                // ⭐ 模糊/无核心词 — 向量主导（已对比归一化），覆盖率兜底
+                finalScore = (e.vectorScore * 0.72 + e.coverageScore * 0.28) * penalty
             } else {
                 // ⭐ 纯文本兜底（无API、无向量）
                 finalScore = (e.textScore * 0.70 + e.coverageScore * 0.30) * penalty
@@ -421,17 +482,35 @@ final class SearchViewModel {
             }
         }
 
-        // ── ⑦ 按融合分排序 → 应用 sortHint → 截取 Top-10 ──
+        // ── ⑦ 置信度门控（严格展示）→ sortHint → Top-N ──
         scored.sort { $0.score > $1.score }
 
-        // 动态阈值：取最高分的 20%，但不低于最低门槛
-        if let topScore = scored.first?.score, topScore > 0 {
-            let dynThreshold = max(topScore * 0.20, 0.06)
-            scored = scored.filter { $0.score >= dynThreshold }
+        // 绝对下限：低于此分基本是噪声，直接丢弃（不进"可能相关"）
+        let absoluteFloor = 0.12
+        scored = scored.filter { $0.score >= absoluteFloor }
+        guard let topScore = scored.first?.score, topScore > 0 else { return [] }
+
+        // 强/弱分界：与最高分的相对差距 + 一个绝对强线。
+        // 满足任一即"弱"：分数 < 最高分×0.55，或 分数 < 0.30 绝对强线。
+        // → 正确项(如共位 0.72)为强；无关项(如 0.24)被判弱、折叠。
+        let strongCutoff = max(topScore * 0.55, 0.30)
+        scored = scored.map { r in
+            var m = r
+            m.isStrong = r.score >= strongCutoff
+            return m
+        }
+
+        // 若没有任何强结果（最高分本身就低于强线）→ 至少把 top1 提为强，避免"全折叠"观感
+        if !scored.contains(where: { $0.isStrong }), var top = scored.first {
+            top.isStrong = true
+            scored[0] = top
         }
 
         let final = applySortHint(scored, hint: sortHint)
-        return Array(final.prefix(10))
+        // 强结果最多 10 条，弱结果最多再留 5 条供"可能相关"展开
+        let strong = final.filter { $0.isStrong }.prefix(10)
+        let weak = final.filter { !$0.isStrong }.prefix(5)
+        return Array(strong) + Array(weak)
     }
 
     // MARK: ── Multi-Field Weighted Text Matching ──
@@ -546,6 +625,51 @@ final class SearchViewModel {
         let itemChars = Set(corpus)
         let hit = queryChars.intersection(itemChars).count
         return Double(hit) / Double(queryChars.count)
+    }
+
+    // MARK: ── Co-location Score（空间共位） ──
+
+    /// 空间关系查询的核心：参照物 anchor 是否出现在物品的 nearbyObjects / scene 里。
+    /// 命中 nearbyObjects = 强证据（1.0）；仅命中 scene = 中等（0.7）；都没有 = 0。
+    /// 只走 nearbyObjects/scene，绝不看 name/description —— 否则"键盘旁边的"会把键盘本体顶上来。
+    private func colocationScore(anchor: String?, item: Item) -> Double {
+        guard let anchor, !anchor.isEmpty else { return 0 }
+        let nearby = item.nearbyObjects ?? ""
+        if !nearby.isEmpty, termMatches(anchor, in: nearby) { return 1.0 }
+        let scene = item.scene ?? ""
+        if !scene.isEmpty, termMatches(anchor, in: scene) { return 0.7 }
+        return 0
+    }
+
+    // MARK: ── Vector Contrast Normalization（向量对比归一化） ──
+
+    /// 把候选集内的原始余弦相似度重标定，解决 Apple 中文短文本"全挤在 0.5–0.7"的压缩问题。
+    /// 策略：
+    /// ① 绝对语义地板：最高余弦都低于 floor(0.30) → 语义通道整体不可信，全部衰减到接近 0。
+    /// ② 对比拉伸：以中位数为支点，中位数以下压向 0，以上按 (v−median)/(max−median) 拉向 1。
+    /// ③ 差距过小（max−median < 0.04）→ 说明大家都差不多，向量无区分力，整体压低当弱 tiebreaker。
+    /// 返回与输入等长、[0,1] 的归一化分。
+    private func normalizeVectorScores(_ raw: [Double]) -> [Double] {
+        guard !raw.isEmpty else { return [] }
+        let maxV = raw.max() ?? 0
+        // ① 绝对地板：最高都太低 → 没有可信语义证据
+        let semanticFloor = 0.30
+        if maxV < semanticFloor {
+            // 轻微保留排序信息，但压到很低，避免混入高置信
+            return raw.map { min(0.15, $0 * 0.3) }
+        }
+        let sorted = raw.sorted()
+        let median = sorted[sorted.count / 2]
+        let span = maxV - median
+        // ③ 差距过小：向量没有区分力
+        if span < 0.04 {
+            return raw.map { _ in 0.10 }
+        }
+        // ② 对比拉伸
+        return raw.map { v in
+            if v <= median { return 0 }
+            return min(1.0, (v - median) / span)
+        }
     }
 
     // MARK: ── Local Synonym Expansion ──
@@ -683,7 +807,66 @@ final class SearchViewModel {
     private func searchableCorpus(_ item: Item) -> String {
         let kw = EmbeddingService.keywordValues(from: item.keywords ?? "").joined(separator: " ")
         return [item.name, item.itemDescription, kw,
-                item.scene ?? "", item.userNote ?? ""].joined(separator: " ")
+                item.scene ?? "", item.nearbyObjects ?? "", item.userNote ?? ""]
+            .joined(separator: " ")
+    }
+
+    // MARK: ── Spatial Relation / Generic Word Filtering ──
+
+    /// 空间关系词：只表达"在哪儿附近"，本身无区分度，必须踢出匹配词。
+    static let spatialRelationWords: Set<String> = [
+        "旁边", "旁", "边上", "附近", "周围", "四周", "一旁", "身边",
+        "里面", "里边", "里", "内", "中", "当中",
+        "上面", "上边", "上", "下面", "下边", "下", "底下",
+        "前面", "前", "后面", "后", "左边", "右边", "左", "右",
+        "隔壁", "对面", "中间", "之间", "一起", "旁侧", "紧挨", "挨着", "靠近",
+    ]
+
+    /// 泛指词：太宽泛，命中等于没命中，还会误配无关物品。
+    static let genericItemWords: Set<String> = [
+        "东西", "物品", "物件", "玩意", "玩意儿", "家伙", "那个", "这个",
+        "东东", "东西们", "物事", "货", "件", "样东西", "个东西",
+    ]
+
+    /// 场景域词：表示"一类场所"的场景过滤条件（区别于可地理编码的城市名）。
+    /// 出现即禁止进入浏览模式，并作为 scene 过滤词参与匹配。
+    static let sceneScopeWords: Set<String> = [
+        "家", "家里", "家中", "公司", "办公室", "单位", "工位",
+        "学校", "教室", "宿舍", "寝室", "店里", "店", "车里", "车上",
+    ]
+
+    /// 从核心/扩展词里剔除关系词、泛指词，以及参照物本身（走共位匹配，不做普通命中）。
+    static func stripNonDiscriminative(_ terms: [String], anchor: String?) -> [String] {
+        let anchorTrim = anchor?.trimmingCharacters(in: .whitespaces)
+        return terms.filter { t in
+            let s = t.trimmingCharacters(in: .whitespaces)
+            if s.isEmpty { return false }
+            if spatialRelationWords.contains(s) { return false }
+            if genericItemWords.contains(s) { return false }
+            if let a = anchorTrim, !a.isEmpty, s == a { return false }
+            return true
+        }
+    }
+
+    /// 无 API 兜底：从原句里抽"参照物 + 关系词"结构的参照物。
+    /// 如"键盘旁边的" → "键盘"；"抽屉里的" → "抽屉"。找不到返回 nil。
+    static func extractSpatialAnchor(from query: String) -> String? {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return nil }
+        // 按关系词切分，取关系词【之前】紧邻的 2-4 个 CJK 字作为参照物
+        for rel in spatialRelationWords.sorted(by: { $0.count > $1.count }) {
+            guard let range = q.range(of: rel) else { continue }
+            let before = String(q[q.startIndex..<range.lowerBound])
+            // 取 before 末尾连续 CJK 字符
+            let cjkTail = before.reversed().prefix { ch in
+                ch.unicodeScalars.first.map { $0.value >= 0x4E00 && $0.value <= 0x9FFF } ?? false
+            }
+            let anchor = String(cjkTail.reversed())
+            // 去掉可能粘连的"的""在"等
+            let cleaned = anchor.trimmingCharacters(in: CharacterSet(charactersIn: "的在放着搁"))
+            if cleaned.count >= 2 { return String(cleaned.suffix(4)) }
+        }
+        return nil
     }
 
     // MARK: ── Cosine Similarity (Accelerate) ──
@@ -706,16 +889,20 @@ final class SearchViewModel {
     // MARK: ── Suggestion ──
 
     private func makeSuggestion(results: [SearchResult]) -> String? {
-        guard !results.isEmpty else { return nil }
-        let top = results.prefix(3)
+        // 只用高置信结果播报，避免把"可能相关"的弱项也算进"找到 N 个"
+        let strong = results.filter { $0.isStrong }
+        guard !strong.isEmpty else {
+            return results.isEmpty ? nil : "没有很确定的匹配，下面是几个可能相关的"
+        }
+        let top = strong.prefix(3)
         let names = top.map(\.item.name)
-        if results.count == 1 {
-            if let scene = results[0].item.scene, !scene.isEmpty {
+        if strong.count == 1 {
+            if let scene = strong[0].item.scene, !scene.isEmpty {
                 return "找到「\(names[0])」，在\(scene)"
             }
             return "找到「\(names[0])」"
         }
-        return "找到\(results.count)个相关物品：\(names.joined(separator: "、"))"
+        return "找到\(strong.count)个相关物品：\(names.joined(separator: "、"))"
     }
 }
 

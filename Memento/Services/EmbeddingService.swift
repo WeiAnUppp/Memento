@@ -90,7 +90,8 @@ struct EmbeddingService {
     /// 组合多条信息生成用于 embedding 的文本。
     /// 关键词只取「值」，剥离 JSON 结构与中文键名（如 {"颜色":"黑"} → "黑"），
     /// 避免向量被 JSON 符号污染，与查询侧的自然语言对齐。
-    func embeddingText(from name: String, description: String, keywords: String?, scene: String?) -> String {
+    func embeddingText(from name: String, description: String, keywords: String?,
+                       scene: String?, nearbyObjects: String? = nil) -> String {
         var parts: [String] = []
         if !name.isEmpty { parts.append(name) }
         if !description.isEmpty { parts.append(description) }
@@ -98,6 +99,12 @@ struct EmbeddingService {
         if let keywords, !keywords.isEmpty {
             let values = EmbeddingService.keywordValues(from: keywords)
             parts.append(values.isEmpty ? keywords : values.joined(separator: " "))
+        }
+        // 周围物品纳入向量文本：让"键盘旁边的鼠标"在语义通道也能被参照物带出。
+        // 顿号在向量语义里无意义，替换为空格。
+        if let nearby = nearbyObjects, !nearby.isEmpty {
+            let cleaned = nearby.replacingOccurrences(of: "、", with: " ")
+            parts.append(cleaned)
         }
         return parts.joined(separator: " ")
     }

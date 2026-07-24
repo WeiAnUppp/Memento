@@ -197,7 +197,8 @@ struct CameraHalfView: View {
     @State private var captureScale: CGFloat = 1
     @State private var previewSize: CGSize = .zero
 
-    let onPhotoCaptured: (UIImage, CLLocationCoordinate2D?) -> Void
+    /// 第三个参数为照片拍摄时间；相机现拍即当前时刻，传 nil 让上层用 now。
+    let onPhotoCaptured: (UIImage, CLLocationCoordinate2D?, Date?) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -233,7 +234,7 @@ struct CameraHalfView: View {
             guard let image else { return }
             let gps = camera.capturedGPS
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                onPhotoCaptured(cropToPreview(image), gps)
+                onPhotoCaptured(cropToPreview(image), gps, nil)
                 dismiss()
             }
             }
@@ -353,5 +354,5 @@ struct CameraHalfView: View {
 }
 
 #Preview {
-    CameraHalfView { _, _ in }
+    CameraHalfView { _, _, _ in }
 }

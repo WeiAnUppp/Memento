@@ -21,7 +21,8 @@ struct PhotoHalfView: View {
 
     private let imageManager = PHCachingImageManager()
 
-    let onPhotoSelected: (UIImage, CLLocationCoordinate2D?) -> Void
+    /// 回调带上照片的拍摄时间（PHAsset.creationDate），供记录时间使用；相机场景传 nil。
+    let onPhotoSelected: (UIImage, CLLocationCoordinate2D?, Date?) -> Void
 
     var body: some View {
         ZStack {
@@ -155,6 +156,7 @@ struct PhotoHalfView: View {
 
     private func requestFullImage(for asset: PHAsset) {
         let gps = asset.location?.coordinate
+        let takenAt = asset.creationDate   // 照片真实拍摄时间
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -168,7 +170,7 @@ struct PhotoHalfView: View {
         ) { image, _ in
             guard let image else { return }
             DispatchQueue.main.async {
-                onPhotoSelected(image, gps)
+                onPhotoSelected(image, gps, takenAt)
                 dismiss()
             }
         }
@@ -224,5 +226,5 @@ struct AssetThumbnail: View {
 }
 
 #Preview {
-    PhotoHalfView { _, _ in }
+    PhotoHalfView { _, _, _ in }
 }

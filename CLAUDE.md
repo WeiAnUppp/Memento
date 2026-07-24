@@ -455,6 +455,45 @@ var friendlyChineseFormat: String {
 
 **GPS 优先级**：照片 EXIF > PHAsset.location > 设备当前位置 > (0,0)
 
+### 物品记录时间修复（2026-07-24）
+
+**问题1**：`createdAt` 永远是 `Date()`（保存时刻），照片原始拍摄时间被丢弃
+
+**根因**：`takenAt` 参数在 ContentView 闭包中被忽略，`saveItem()` 硬编码 `Date()`
+
+**修复**：
+- `ContentView`：新增 `pendingImageDate` 状态，`CameraHalfView`/`PhotoHalfView` 闭包捕获第三参数 `date`
+- `CaptureViewModel.saveItem()`：`createdAt: photoDates.first.flatMap { $0 } ?? Date()`
+  - 相册选图 → `PHAsset.creationDate`（照片真实拍摄时间）
+  - 相机拍照 → `nil` → fallback `Date()`（刚拍的正确时间）
+
+**涉及文件**：`ContentView.swift`、`CaptureViewModel.swift`
+
+### 时间搜索精确日支持（2026-07-24）
+
+**问题2**：搜索"前天的东西"返回全部——AI 无"前天"映射值 → `timeFilter: nil` → 不过滤
+
+**修复**：
+- `TimeFilter` 新增 `daysAgo: Int?` 字段，`dateRange()` 优先处理精确偏移天数
+- `parseQuery` prompt 补充完整时间映射表：前天→daysAgo:2, 大前天→3, N天前→N
+- 时间过滤无结果时不再降级全量搜索，直接返回空
+
+**涉及文件**：`AIResponse.swift`、`AIService.swift`、`SearchViewModel.swift`
+
+### AI 图片分析详细度大幅增强（2026-07-24）
+
+**问题**：AI 返回的描述太简短（"黑色手机，长方形"），搜索时可匹配的细节太少
+
+**修复**：重写 `analyzeImages` system prompt：
+- `description`：要求至少150字完整段落，包含颜色/形状/材质/尺寸/品牌logo/细节特征/新旧状态
+- `scene`：要求至少80字，包含房间类型/表面/家具/光线/氛围
+- `keywords`：从3-5个扩展到8个维度（颜色/品类/材质/位置/品牌/形状/用途/特征）
+- `nearby_objects`：要求至少3-8个，越多越好
+- `max_tokens`：1024 → 2048，确保 AI 有足够空间输出详细内容
+- 核心原则："宁可冗余，不可遗漏"
+
+**涉及文件**：`AIService.swift`
+
 ## 复赛文档 & 视频要点
 
 ### 文档重点补充（相比初赛）

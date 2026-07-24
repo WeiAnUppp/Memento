@@ -14,6 +14,9 @@ struct Item: Identifiable, Codable, Equatable {
     var itemDescription: String
     var keywords: String?
     var scene: String?
+    /// 画面中相邻/周围可见的物品与环境（AI 记录时提取），用于空间关系查询
+    /// （"键盘旁边的""抽屉里的"）。存为顿号分隔的中文短语，如 "键盘、显示器、鼠标垫"。
+    var nearbyObjects: String? = nil
     var userNote: String?
     var latitude: Double
     var longitude: Double
