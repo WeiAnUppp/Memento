@@ -343,6 +343,25 @@ final class DatabaseService {
         }
     }
 
+    /// 仅更新 embedding 向量（重建索引时调用）
+    func updateEmbedding(id: Int64, embedding: [Float]?) throws {
+        try queue.sync {
+            let sql = "UPDATE items SET embedding=? WHERE id=?;"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            bindEmbedding(stmt, 1, embedding)
+            sqlite3_bind_int64(stmt, 2, id)
+
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw DatabaseError.updateFailed(errmsg())
+            }
+        }
+    }
+
     /// 仅更新图标 emoji
     func updateEmoji(id: Int64, emoji: String) throws {
         try queue.sync {
@@ -378,6 +397,46 @@ final class DatabaseService {
                 throw DatabaseError.deleteFailed(errmsg())
             }
         }
+    }
+
+    // MARK: - Search
+
+    /// 获取所有物品及其 embedding 向量（用于搜索排序）
+    func fetchAllWithEmbeddings() throws -> [(Item, [Float]?)] {
+        return try queue.sync {
+            // embedding 放在最后，rowToItem 的列索引不受影响
+            let sql = """
+            SELECT id, name, description, keywords, scene, user_note,
+                   latitude, longitude, image_path, emoji, created_at, updated_at, embedding
+            FROM items ORDER BY created_at DESC;
+            """
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw DatabaseError.fetchFailed(errmsg())
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            var results: [(Item, [Float]?)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let item = rowToItem(stmt) {
+                    let embedding = readEmbedding(stmt, col: 12)
+                    results.append((item, embedding))
+                }
+            }
+            return results
+        }
+    }
+
+    /// 读取 SQLite BLOB 列为 [Float] 向量
+    private func readEmbedding(_ stmt: OpaquePointer?, col: Int32) -> [Float]? {
+        guard let stmt, sqlite3_column_type(stmt, col) != SQLITE_NULL else { return nil }
+        let byteCount = Int(sqlite3_column_bytes(stmt, col))
+        guard byteCount > 0,
+              let blob = sqlite3_column_blob(stmt, col) else { return nil }
+        let floatCount = byteCount / MemoryLayout<Float>.size
+        let typedPointer = blob.bindMemory(to: Float.self, capacity: floatCount)
+        return Array(UnsafeBufferPointer(start: typedPointer, count: floatCount))
     }
 
     // MARK: - Image Helpers

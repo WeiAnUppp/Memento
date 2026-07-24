@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - App Page
 
@@ -37,6 +38,8 @@ struct ContentView: View {
     @State private var showPhotoSheet = false
     /// 选图 / 拍照后，待处理的图片
     @State private var pendingImage: UIImage?
+    /// 图片 EXIF GPS（如有）
+    @State private var pendingImageGPS: CLLocationCoordinate2D?
 
     /// 地图共享状态 —— 提升到 ContentView，页面切换时 cameraPosition / items 不丢失
     @State private var mapViewModel = MapViewModel()
@@ -175,7 +178,10 @@ struct ContentView: View {
             showRecordingOverlay = recording
         }
         .fullScreenCover(isPresented: $showSearch) {
-            SearchModalView()
+            SearchModalView { item in
+                mapViewModel.focusOnItem(item)
+                selectedPage = .map
+            }
         }
         // 后台分析进度 sheet
         .sheet(isPresented: $showAnalysisProgress) {
@@ -186,16 +192,18 @@ struct ContentView: View {
         }
         // 相机半屏
         .sheet(isPresented: $showCameraSheet) {
-            CameraHalfView { image in
+            CameraHalfView { image, gps in
                 pendingImage = image
+                pendingImageGPS = gps
             }
             .presentationDetents([.fraction(0.65)])
             .presentationDragIndicator(.hidden)
         }
         // 照片半屏
         .sheet(isPresented: $showPhotoSheet) {
-            PhotoHalfView { image in
+            PhotoHalfView { image, gps in
                 pendingImage = image
+                pendingImageGPS = gps
             }
             .presentationDragIndicator(.hidden)
         }
@@ -259,14 +267,16 @@ struct ContentView: View {
 
     private func handlePhotoCaptured() {
         guard let image = pendingImage else { return }
+        let gps = pendingImageGPS
         if isAddingMorePhotos {
-            captureViewModel.addImage(image, gps: nil)
+            captureViewModel.addImage(image, gps: gps)
             photoCardIndex = max(captureViewModel.selectedImages.count - 1, 0)
         } else {
-            captureViewModel.didSelectFirstImage(image, gps: nil)
+            captureViewModel.didSelectFirstImage(image, gps: gps)
             photoCardIndex = 0
         }
         pendingImage = nil
+        pendingImageGPS = nil
     }
 
     // MARK: - Dismiss Recording
@@ -820,35 +830,190 @@ struct ContentView: View {
 // MARK: - Search Modal
 
 private struct SearchModalView: View {
+    let onResultSelected: (Item) -> Void
+
     @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var viewModel = SearchViewModel()
+    @FocusState private var isSearchFocused: Bool
+
+    /// 麦克风录音最大时长保护（秒）
+    private let maxRecordingDuration: TimeInterval = 60
 
     var body: some View {
         NavigationStack {
-            Group {
-                if searchText.isEmpty {
-                    ContentUnavailableView(
-                        "搜索物品",
-                        systemImage: "magnifyingglass",
-                        description: Text("输入关键词查找你记录过的物品")
-                    )
-                } else {
-                    List {
-                        Text("搜索结果")
-                            .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                // 搜索输入栏
+                searchInputBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                // 内容区
+                SearchResultView(
+                    results: viewModel.results,
+                    isSearching: viewModel.isSearching,
+                    hasSearched: viewModel.hasSearched,
+                    searchError: viewModel.searchError,
+                    suggestionText: viewModel.suggestionText,
+                    onResultSelected: { item in
+                        dismiss()
+                        // 延迟等 dismiss 动画完成后再定位
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            onResultSelected(item)
+                        }
+                    },
+                    onRetry: {
+                        viewModel.performSearch()
                     }
-                    .listStyle(.plain)
-                }
+                )
+                .frame(maxHeight: .infinity)
             }
             .navigationTitle("搜索")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
+                    Button("取消") { dismiss() }
                 }
             }
         }
-        .searchable(text: $searchText)
+        .onAppear {
+            isSearchFocused = true
+        }
+        // 语音识别结果回填
+        .onChange(of: viewModel.speechService.isRecording) { _, recording in
+            if !recording {
+                let cleaned = viewModel.speechService.cleanedTranscript
+                if !cleaned.isEmpty {
+                    viewModel.queryText = cleaned
+                }
+            }
+        }
+    }
+
+    // MARK: - Search Input Bar
+
+    /// 复用记录物品的输入设计：玻璃胶囊 + 文字输入 + 麦克风 + shimmer 占位符
+    private var searchInputBar: some View {
+        HStack(spacing: 8) {
+            // 搜索图标
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+
+            // 输入区域
+            ZStack(alignment: .leading) {
+                TextField("", text: $viewModel.queryText)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .focused($isSearchFocused)
+                    .disabled(viewModel.speechService.isRecording)
+                    .onSubmit {
+                        viewModel.performSearch()
+                    }
+
+                // 占位符：空态 shimmer，录音中声波
+                if viewModel.queryText.isEmpty && !viewModel.speechService.isRecording {
+                    searchShimmerPlaceholder
+                }
+                if viewModel.speechService.isRecording {
+                    InlineSoundWave()
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            // 右侧按钮：有文字→清空 | 录音中→停止 | 默认→麦克风
+            let hasText = !viewModel.queryText.isEmpty
+            let isRec = viewModel.speechService.isRecording
+            let iconName = hasText && !isRec
+                ? "xmark.circle.fill"
+                : (isRec ? "stop.fill" : "mic.fill")
+            let iconColor: Color = isRec
+                ? .red
+                : .secondary
+
+            Button {
+                if isRec {
+                    viewModel.stopVoiceInput()
+                } else if hasText {
+                    viewModel.queryText = ""
+                } else {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                        isSearchFocused = false
+                    }
+                    viewModel.startVoiceInput()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + maxRecordingDuration) { [weak viewModel = viewModel] in
+                        guard viewModel?.speechService.isRecording == true else { return }
+                        viewModel?.stopVoiceInput()
+                    }
+                }
+            } label: {
+                Image(systemName: iconName)
+                    .foregroundStyle(iconColor)
+                    .contentTransition(.opacity)
+                    .padding(.vertical, 12)
+                    .padding(.trailing, 14)
+                    .padding(.leading, 4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 10)
+        .frame(height: 50)
+        .glassEffect(.regular, in: .capsule)
+        .glowingBorder(
+            shape: .capsule,
+            lineWidth: 1.5,
+            glowRadius: 4,
+            isActive: viewModel.speechService.isRecording
+        )
+    }
+
+    // MARK: - Shimmer Placeholder
+
+    private var searchShimmerPlaceholder: some View {
+        let isDark = colorScheme == .dark
+        let dimOpacity: Double = isDark ? 0.10 : 0.18
+        let peakOpacity: Double = isDark ? 0.52 : 0.65
+        let bandHalf: Double = 0.12
+
+        return TimelineView(.animation) { timeline in
+            let seconds = timeline.date.timeIntervalSince1970
+            let phase = seconds.truncatingRemainder(dividingBy: 8.0) / 8.0
+
+            Text("描述你想找的物品...")
+                .font(.body)
+                .foregroundStyle(searchGradient(for: phase, dim: dimOpacity, peak: peakOpacity, bandHalf: bandHalf))
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func searchGradient(
+        for phase: Double,
+        dim dimOpacity: Double,
+        peak peakOpacity: Double,
+        bandHalf: Double
+    ) -> LinearGradient {
+        let wrap: (Double) -> Double = { ($0.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1) }
+
+        var stops: [Gradient.Stop] = []
+        for i in 0..<2 {
+            let c = wrap(phase + Double(i) / 2)
+            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c - bandHalf)))
+            stops.append(.init(color: .primary.opacity(peakOpacity), location: c))
+            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c + bandHalf)))
+        }
+
+        stops.sort { $0.location < $1.location }
+
+        if let first = stops.first, first.location > 0.001 {
+            stops.insert(.init(color: stops.last!.color, location: 0), at: 0)
+        }
+        if let last = stops.last, last.location < 0.999 {
+            stops.append(.init(color: stops.first!.color, location: 1))
+        }
+
+        return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
     }
 }
 

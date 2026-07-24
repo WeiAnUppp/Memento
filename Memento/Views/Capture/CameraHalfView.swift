@@ -7,6 +7,8 @@
 
 import SwiftUI
 import AVFoundation
+import CoreLocation
+import ImageIO
 
 // MARK: - Flash Mode
 
@@ -38,6 +40,7 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
     private let photoOutput = AVCapturePhotoOutput()
 
     var capturedImage: UIImage?
+    var capturedGPS: CLLocationCoordinate2D?
     var isAuthorized = false
     var isSessionReady = false
     var errorMessage: String?
@@ -137,6 +140,24 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
             return
         }
         capturedImage = image
+        capturedGPS = Self.extractGPS(from: data)
+    }
+
+    /// 从 JPEG/HEIC 照片数据中提取 EXIF GPS 坐标
+    static func extractGPS(from imageData: Data) -> CLLocationCoordinate2D? {
+        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let gps = props[kCGImagePropertyGPSDictionary as String] as? [String: Any],
+              let lat = gps[kCGImagePropertyGPSLatitude as String] as? Double,
+              let lon = gps[kCGImagePropertyGPSLongitude as String] as? Double,
+              let latRef = gps[kCGImagePropertyGPSLatitudeRef as String] as? String,
+              let lonRef = gps[kCGImagePropertyGPSLongitudeRef as String] as? String
+        else { return nil }
+
+        return CLLocationCoordinate2D(
+            latitude: latRef == "S" ? -lat : lat,
+            longitude: lonRef == "W" ? -lon : lon
+        )
     }
 }
 
@@ -176,7 +197,7 @@ struct CameraHalfView: View {
     @State private var captureScale: CGFloat = 1
     @State private var previewSize: CGSize = .zero
 
-    let onPhotoCaptured: (UIImage) -> Void
+    let onPhotoCaptured: (UIImage, CLLocationCoordinate2D?) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -210,8 +231,9 @@ struct CameraHalfView: View {
         .onDisappear { camera.stop() }
         .onChange(of: camera.capturedImage) { _, image in
             guard let image else { return }
+            let gps = camera.capturedGPS
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                onPhotoCaptured(cropToPreview(image))
+                onPhotoCaptured(cropToPreview(image), gps)
                 dismiss()
             }
             }
@@ -331,5 +353,5 @@ struct CameraHalfView: View {
 }
 
 #Preview {
-    CameraHalfView { _ in }
+    CameraHalfView { _, _ in }
 }

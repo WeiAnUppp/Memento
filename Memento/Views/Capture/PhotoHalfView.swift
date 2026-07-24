@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Photos
+import CoreLocation
 
 // MARK: - Photo Half View
 
@@ -20,7 +21,7 @@ struct PhotoHalfView: View {
 
     private let imageManager = PHCachingImageManager()
 
-    let onPhotoSelected: (UIImage) -> Void
+    let onPhotoSelected: (UIImage, CLLocationCoordinate2D?) -> Void
 
     var body: some View {
         ZStack {
@@ -153,6 +154,8 @@ struct PhotoHalfView: View {
     // MARK: - Select Photo
 
     private func requestFullImage(for asset: PHAsset) {
+        let gps = asset.location?.coordinate
+
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
@@ -165,7 +168,7 @@ struct PhotoHalfView: View {
         ) { image, _ in
             guard let image else { return }
             DispatchQueue.main.async {
-                onPhotoSelected(image)
+                onPhotoSelected(image, gps)
                 dismiss()
             }
         }
@@ -221,5 +224,5 @@ struct AssetThumbnail: View {
 }
 
 #Preview {
-    PhotoHalfView { _ in }
+    PhotoHalfView { _, _ in }
 }

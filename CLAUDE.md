@@ -229,8 +229,8 @@ CREATE TABLE items (
 | 6-7 | AIService：MiMo v2.5 图像识别；EmbeddingService：Apple NL 向量化 | AI 链路通 | ✅ |
 | 8 | CaptureViewModel + CaptureView：拍照→AI→预览→保存（照片EXIF GPS优先） | 记录物品闭环 | ✅ |
 | 9 | MapViewModel + MapHomeView：DB加载物品，地图大头针，点击详情 | 地图闭环 | ✅ |
-| 10 | SearchViewModel + SearchView：混合搜索 | 搜索 | ⬜ |
-| 11 | SpeechService：语音识别 + TTS | 语音闭环 | ⬜ |
+| 10 | SearchViewModel + SearchView：混合搜索 | 搜索 | ✅（初版，已知问题） |
+| 11 | SpeechService：语音识别 + TTS | 语音闭环 | ✅（基础可用） |
 | 12 | ItemDetailView + ItemListView：详情页+列表页+滑动删除 | 详情+列表 | ✅ |
 | 13 | 缓冲日 + 整体联调 | — | ⬜ |
 
@@ -257,7 +257,9 @@ CREATE TABLE items (
 - [x] 地图大头针视觉风格：蓝色 mappin.circle.fill + 玻璃胶囊名称标签
 - [x] 列表页：ItemCard 缩略图卡片 + 滑动删除 + 下拉刷新
 - [x] 列表页设计定稿（2026-07-23）：缩略图 + 名称 + 位置·时间，白色填充卡片 + 细线描边
+- [x] 搜索功能：初版完成，自适应三模式排名（文本/位置/向量），已知7个问题待迭代
 - [ ] 物品分类体系（AI 自动分类 vs 用户手动标签）
+- [ ] 搜索历史 / 自动补全 / 推荐
 
 ## 当前实现笔记（2026-07-22）
 
@@ -387,10 +389,71 @@ var friendlyChineseFormat: String {
 - `Views/Components/CaptureOverlay.swift` — `AnalysisProgressSheet`
 
 ### 待实现
-- 搜索功能（Day 10）
-- 语音播报 TTS（Day 11，语音输入已完成）
+- ~~搜索功能（Day 10）~~ → 2026-07-24 初版完成，仍有已知问题
+- ~~语音播报 TTS（Day 11，语音输入已完成）~~ → 2026-07-24 基础 TTS 完成
 - Liquid Glass 动画打磨（Day 14-15，录制退出动画已完成）
 - 演示视频录制（Day 18-19）
+
+## 当前实现笔记（2026-07-24）
+
+### 搜索功能（初版完成，已知问题见下节）
+
+**架构**：`SearchModalView`（fullScreenCover）→ `SearchViewModel` → AI 解析 + 向量搜索 + 文本匹配 + GPS 位置搜索
+
+**输入设计**：复用记录物品的玻璃胶囊 + shimmer 占位符 + 麦克风按钮 + 声波录音动画
+
+**搜索流程**：
+```
+文字/语音 → AI parseQuery → {keywords, searchText, locationName?}
+  → 地理编码（如有地名） → Haversine 距离
+  → Apple NL 向量化 searchText
+  → 全量物品：文本匹配分 + 向量余弦相似度 + 位置近度分
+  → 自适应融合排序 → Top-10
+```
+
+**自适应三模式排名**：
+| 模式 | 触发条件 | 权重 | 门槛 | 适用查询 |
+|------|----------|------|------|----------|
+| 文本主导 | AI关键词命中≥50% | text×0.7 vec×0.3 | 0.25 | "手机""钥匙""蓝色盒子" |
+| 位置主导 | AI提取了地名 | text×0.15 vec×0.35 **loc×0.5** | 0.12 | "在上海记录的" |
+| 向量主导 | 关键词/位置都弱 | text×0.3 **vec×0.7** | 0.12 | "键盘旁边的东西" |
+
+**中文分词**：`NSLinguisticTagger`（`.tokenType`），回退逐字切分
+**向量搜索**：Accelerate `vDSP_dotpr` 余弦相似度
+**GPS 搜索**：`CLGeocoder` 前向地理编码 + Haversine 公式 + 缓存
+**TTS**：`AVSpeechSynthesizer`（zh-CN, rate 0.5）
+
+**涉及文件**：
+- `ViewModels/SearchViewModel.swift` — 完整重写（原1行TODO），含自适应排名 + 地理编码 + 中文分词
+- `Services/AIService.swift` — `parseQuery` prompt 重写，新增 `locationName` 提取
+- `Services/DatabaseService.swift` — 新增 `fetchAllWithEmbeddings()`、`readEmbedding()`
+- `Models/AIResponse.swift` — `SearchQuery` 新增 `locationName: String?`
+- `Views/Search/SearchResultView.swift` — 完整UI：空态/搜索中/结果列表/无结果/错误，含 TTS 播报栏 + 匹配度徽章
+- `ContentView.swift` — `SearchModalView` 从占位重写为完整搜索体验
+
+### 搜索已知问题 ⚠️
+
+1. **Apple NL 中文 embedding 区分度有限** — 短文本（2-4字）向量相似度普遍偏高，数百条数据后无关物品可能混入
+2. **依赖 AI API** — 若用户未配置 API Key，降级到纯本地分词匹配，精度大幅下降
+3. **无物品分类/标签体系** — 物品之间缺乏结构化关联（同类物品、同场景物品），搜索结果缺少"你可能还想找"推荐
+4. **TTS 播报无完成回调** — 使用简化的 10 秒延时重置，长文本可能提前截断
+5. **搜索结果无地图俯览** — 当前仅列表展示，缺少"查看所有结果在地图上的位置"功能
+6. **无搜索历史 / 建议** — 每次搜索从零开始，无自动补全或历史记录
+7. **向量主导模式门槛 0.12 偏低** — 可能让弱相关物品通过（需根据真实数据微调）
+
+### 照片 GPS 提取修复（2026-07-24）
+
+**问题**：拍照/选图后 `photoGPSs` 永远为 `nil`，所有物品 GPS 回退到设备当前位置
+
+**根因**：`CameraHalfView` 和 `PhotoHalfView` 回调只传 `UIImage`，GPS 数据被丢弃
+
+**修复**：
+- `CameraHalfView`：回调签名 `(UIImage) → (UIImage, CLLocationCoordinate2D?)`；`CameraModel` 新增 `capturedGPS`，用 `CGImageSource` 从照片 JPEG 数据提取 EXIF GPS
+- `PhotoHalfView`：回调签名同上，传递 `PHAsset.location?.coordinate`
+- `ContentView`：新增 `pendingImageGPS` 状态，`handlePhotoCaptured()` 传递真实 GPS
+- `CaptureView.swift`：回调适应新签名
+
+**GPS 优先级**：照片 EXIF > PHAsset.location > 设备当前位置 > (0,0)
 
 ## 复赛文档 & 视频要点
 
