@@ -35,6 +35,7 @@ enum SettingsPage: Hashable {
 // MARK: - SettingsView
 
 struct SettingsView: View {
+    @Environment(\.sheetTabVisibilityProgress) private var tabVisibilityProgress
     @Binding var selectedPage: AppPage
     @Binding var navigationDepth: Int
 
@@ -67,6 +68,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .opacity(tabVisibilityProgress)
         .onChange(of: path.count) { _, newCount in
             navigationDepth = newCount
         }
@@ -386,7 +388,5 @@ private extension View {
 }
 
 #Preview {
-    NavigationStack {
-        SettingsView(selectedPage: .constant(.settings), navigationDepth: .constant(0))
-    }
+    ContentView()
 }

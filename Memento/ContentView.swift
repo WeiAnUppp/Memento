@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MapKit
 
 // MARK: - App Page
 
@@ -23,6 +24,24 @@ enum AppPage: String, CaseIterable {
     }
 }
 
+enum TabItem: String, Hashable {
+    case list = "列表"
+    case settings = "设置"
+    
+    var symbolImage: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .settings: return "gearshape.fill"
+        }
+    }
+    
+    @ContentBuilder
+    var tabLabel: some View {
+        Image(systemName: self.symbolImage)
+        Text(self.rawValue)
+    }
+}
+
 // MARK: - ContentView
 
 struct ContentView: View {
@@ -30,6 +49,9 @@ struct ContentView: View {
     @State private var selectedPage: AppPage = .map
     @State private var showSearch = false
     @State private var settingsNavigationDepth = 0
+    
+    @State private var showTabView: Bool = true
+    @State private var activeTab: TabItem = .list
 
     /// 半屏相机
     @State private var showCameraSheet = false
@@ -99,160 +121,188 @@ struct ContentView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            // 底层：页面内容
-            pageContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // 记录时遮罩 — 全屏灰色
-            // 键盘弹出 → 先收键盘；无图片 → 可退出；有图片 → 不可退出
-            Color.black
-                .ignoresSafeArea()
-                .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.5 : 0.3) : 0)
-                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
-                .onTapGesture {
-                    if isDescriptionFocused {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                            isDescriptionFocused = false
-                        }
-                    } else if captureViewModel.selectedImages.isEmpty {
-                        dismissRecording()
+        Map()
+            .sheet(isPresented: $showTabView) {
+                SheetTabView(selection: $activeTab ) {
+                    Tab.init(value: .list) {
+                        ItemListView(
+                            onDataChanged: {
+                                mapViewModel.loadItems()
+                            },
+                            onBarVisibilityChange: { visible in
+                                withAnimation(.smooth(duration: 0.35)) {
+                                    listBarHidden = !visible
+                                }
+                            }
+                        )
+                        .disabled(isRecording)
+                    } label: {
+                        TabItem.list.tabLabel
+                    }
+                    Tab.init(value: .settings) {
+                        SettingsView(
+                            selectedPage: $selectedPage,
+                            navigationDepth: $settingsNavigationDepth
+                        )
+                    } label: {
+                        TabItem.settings.tabLabel
                     }
                 }
-                .allowsHitTesting(showRecordingOverlay)
-
-            // 顶层：自定义顶栏 — 记录时半透明但仍可交互
-            if showCustomTopBar {
-                VStack(spacing: 0) {
-                    customTopBar
-                    Spacer()
-                }
-                .opacity(isRecording ? 0.65 : 1)
-                .allowsHitTesting(true)
-                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: isRecording)
             }
-
-            // 后台分析旋转图标 — 始终在所有页面可见
-            if captureViewModel.isBackgroundAnalyzing {
-                VStack(spacing: 0) {
-                    HStack {
-                        SpinningDotsButton {
-                            showAnalysisProgress = true
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    Spacer()
-                }
-                .transition(.scale.combined(with: .opacity))
-            }
-
-            // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
-            captureOverlay
-                .opacity(showRecordingOverlay ? 1 : 0)
-                .offset(y: showRecordingOverlay ? 0 : 120)
-                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
-                .simultaneousGesture(TapGesture().onEnded {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                        isDescriptionFocused = false
-                    }
-                })
-
-            // 底部栏
-            VStack(spacing: 0) {
-                Spacer()
-                bottomBarContent
-                    .padding(.horizontal, 23)
-                    .padding(.bottom, 18)
-                    .offset(y: showBottomBar ? 0 : 80)
-                    .opacity(showBottomBar ? 1 : 0)
-                    .animation(.smooth(duration: 0.35), value: showBottomBar)
-            }
-        }
-        // 同步 ViewModel 状态到动画 Bool
-        .onChange(of: isRecording) { _, recording in
-            showRecordingOverlay = recording
-        }
-        .fullScreenCover(isPresented: $showSearch) {
-            SearchModalView()
-        }
-        // 后台分析进度 sheet
-        .sheet(isPresented: $showAnalysisProgress) {
-            AnalysisProgressSheet(
-                image: captureViewModel.analyzingImage,
-                statusText: captureViewModel.analyzingStatusText
-            )
-        }
-        // 相机半屏
-        .sheet(isPresented: $showCameraSheet) {
-            CameraHalfView { image in
-                pendingImage = image
-            }
-            .presentationDetents([.fraction(0.65)])
-            .presentationDragIndicator(.hidden)
-        }
-        // 照片半屏
-        .sheet(isPresented: $showPhotoSheet) {
-            PhotoHalfView { image in
-                pendingImage = image
-            }
-            .presentationDragIndicator(.hidden)
-        }
-        // 选图回调
-        .onChange(of: showCameraSheet) { _, showing in
-            if !showing { handlePhotoCaptured() }
-        }
-        .onChange(of: showPhotoSheet) { _, showing in
-            if !showing { handlePhotoCaptured() }
-        }
-        // 保存成功 → 刷新地图，自动定位，清理状态
-        .onChange(of: captureViewModel.state) { _, newState in
-            switch newState {
-            case .backgroundAnalyzing:
-                // 录音 UI 立即关闭（isRecording 已为 false，showRecordingOverlay 自动跟随）
-                break
-            case .saved(let item):
-                mapViewModel.loadItems()
-                mapViewModel.focusOnItem(item)
-                photoCardIndex = 0
-                photoDragOffset = .zero
-                showAnalysisProgress = false
-                if showRecordingOverlay {
-                    // 前台预览保存路径 → 退出录音遮罩
-                    dismissRecording(after: 0.6)
-                } else {
-                    // 后台自动保存路径 → 直接重置 VM
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        captureViewModel.reset()
-                    }
-                }
-            case .error where captureViewModel.analysisDidFail:
-                // 后台分析失败 → 静默重置
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    captureViewModel.reset()
-                }
-            default:
-                break
-            }
-        }
-        // 语音识别结果回填（使用过滤语气词后的文本）
-        .onChange(of: captureViewModel.speechService.isRecording) { _, recording in
-            if !recording {
-                let cleaned = captureViewModel.speechService.cleanedTranscript
-                if !cleaned.isEmpty {
-                    captureViewModel.userContext = cleaned
-                }
-            }
-        }
-        .onChange(of: selectedPage) { _, _ in
-            listBarHidden = false
-        }
-        .onChange(of: captureViewModel.state) { _, newState in
-            if case .readyForInput = newState {
-                sparklesAnimatingOut = false
-            }
-        }
+//        ZStack {
+//            // 底层：页面内容
+//            pageContent
+//                .frame(maxWidth: .infinity, maxHeight: .infinity)
+//
+//            // 记录时遮罩 — 全屏灰色
+//            // 键盘弹出 → 先收键盘；无图片 → 可退出；有图片 → 不可退出
+//            Color.black
+//                .ignoresSafeArea()
+//                .opacity(showRecordingOverlay ? (colorScheme == .dark ? 0.5 : 0.3) : 0)
+//                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
+//                .onTapGesture {
+//                    if isDescriptionFocused {
+//                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+//                            isDescriptionFocused = false
+//                        }
+//                    } else if captureViewModel.selectedImages.isEmpty {
+//                        dismissRecording()
+//                    }
+//                }
+//                .allowsHitTesting(showRecordingOverlay)
+//
+//            // 顶层：自定义顶栏 — 记录时半透明但仍可交互
+//            if showCustomTopBar {
+//                VStack(spacing: 0) {
+//                    customTopBar
+//                    Spacer()
+//                }
+//                .opacity(isRecording ? 0.65 : 1)
+//                .allowsHitTesting(true)
+//                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: isRecording)
+//            }
+//
+//            // 后台分析旋转图标 — 始终在所有页面可见
+//            if captureViewModel.isBackgroundAnalyzing {
+//                VStack(spacing: 0) {
+//                    HStack {
+//                        SpinningDotsButton {
+//                            showAnalysisProgress = true
+//                        }
+//                        Spacer()
+//                    }
+//                    .padding(.horizontal, 16)
+//                    .padding(.top, 4)
+//                    Spacer()
+//                }
+//                .transition(.scale.combined(with: .opacity))
+//            }
+//
+//            // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
+//            captureOverlay
+//                .opacity(showRecordingOverlay ? 1 : 0)
+//                .offset(y: showRecordingOverlay ? 0 : 120)
+//                .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showRecordingOverlay)
+//                .simultaneousGesture(TapGesture().onEnded {
+//                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+//                        isDescriptionFocused = false
+//                    }
+//                })
+//
+//            // 底部栏
+//            VStack(spacing: 0) {
+//                Spacer()
+//                bottomBarContent
+//                    .padding(.horizontal, 23)
+//                    .padding(.bottom, 18)
+//                    .offset(y: showBottomBar ? 0 : 80)
+//                    .opacity(showBottomBar ? 1 : 0)
+//                    .animation(.smooth(duration: 0.35), value: showBottomBar)
+//            }
+//        }
+//        // 同步 ViewModel 状态到动画 Bool
+//        .onChange(of: isRecording) { _, recording in
+//            showRecordingOverlay = recording
+//        }
+//        .fullScreenCover(isPresented: $showSearch) {
+//            SearchModalView()
+//        }
+//        // 后台分析进度 sheet
+//        .sheet(isPresented: $showAnalysisProgress) {
+//            AnalysisProgressSheet(
+//                image: captureViewModel.analyzingImage,
+//                statusText: captureViewModel.analyzingStatusText
+//            )
+//        }
+//        // 相机半屏
+//        .sheet(isPresented: $showCameraSheet) {
+//            CameraHalfView { image in
+//                pendingImage = image
+//            }
+//            .presentationDetents([.fraction(0.65)])
+//            .presentationDragIndicator(.hidden)
+//        }
+//        // 照片半屏
+//        .sheet(isPresented: $showPhotoSheet) {
+//            PhotoHalfView { image in
+//                pendingImage = image
+//            }
+//            .presentationDragIndicator(.hidden)
+//        }
+//        // 选图回调
+//        .onChange(of: showCameraSheet) { _, showing in
+//            if !showing { handlePhotoCaptured() }
+//        }
+//        .onChange(of: showPhotoSheet) { _, showing in
+//            if !showing { handlePhotoCaptured() }
+//        }
+//        // 保存成功 → 刷新地图，自动定位，清理状态
+//        .onChange(of: captureViewModel.state) { _, newState in
+//            switch newState {
+//            case .backgroundAnalyzing:
+//                // 录音 UI 立即关闭（isRecording 已为 false，showRecordingOverlay 自动跟随）
+//                break
+//            case .saved(let item):
+//                mapViewModel.loadItems()
+//                mapViewModel.focusOnItem(item)
+//                photoCardIndex = 0
+//                photoDragOffset = .zero
+//                showAnalysisProgress = false
+//                if showRecordingOverlay {
+//                    // 前台预览保存路径 → 退出录音遮罩
+//                    dismissRecording(after: 0.6)
+//                } else {
+//                    // 后台自动保存路径 → 直接重置 VM
+//                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+//                        captureViewModel.reset()
+//                    }
+//                }
+//            case .error where captureViewModel.analysisDidFail:
+//                // 后台分析失败 → 静默重置
+//                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+//                    captureViewModel.reset()
+//                }
+//            default:
+//                break
+//            }
+//        }
+//        // 语音识别结果回填（使用过滤语气词后的文本）
+//        .onChange(of: captureViewModel.speechService.isRecording) { _, recording in
+//            if !recording {
+//                let cleaned = captureViewModel.speechService.cleanedTranscript
+//                if !cleaned.isEmpty {
+//                    captureViewModel.userContext = cleaned
+//                }
+//            }
+//        }
+//        .onChange(of: selectedPage) { _, _ in
+//            listBarHidden = false
+//        }
+//        .onChange(of: captureViewModel.state) { _, newState in
+//            if case .readyForInput = newState {
+//                sparklesAnimatingOut = false
+//            }
+//        }
     }
 
     // MARK: - Photo Captured Handler
