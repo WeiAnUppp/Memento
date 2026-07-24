@@ -26,26 +26,34 @@ struct SpinningDotsButton: View {
 
 // MARK: - Spinning Dots View
 
-/// 8 个小圆点均匀分布在圆环上，整体匀速旋转
+/// 8 个小圆点均匀分布在圆环上，整体匀速旋转。
+///
+/// 性能关键：不用 TimelineView（每帧都会重建 8 个子视图 + 让外层 glassEffect
+/// 跟着每帧重采样背景 → 卡顿）。改为**静态视图树 + rotationEffect 无限动画**：
+/// 旋转由 Core Animation 渲染服务器（GPU）驱动，主线程每帧零开销，玻璃只采样一次。
 struct SpinningDotsView: View {
-    @State private var rotation: Double = 0
-
     private let dotCount = 8
     private let radius: CGFloat = 9
+    private let dotSize: CGFloat = 3.5
+    private let rotationSpeed: TimeInterval = 7.0  // 一圈秒数
+
+    @State private var spinning = false
 
     var body: some View {
         ZStack {
             ForEach(0..<dotCount, id: \.self) { i in
                 let angle = Double(i) / Double(dotCount) * 2 * .pi
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 3.5))
+                Circle()
+                    .fill(.primary)
+                    .frame(width: dotSize, height: dotSize)
                     .offset(x: radius * cos(angle), y: radius * sin(angle))
             }
         }
-        .rotationEffect(.degrees(rotation))
+        .rotationEffect(.degrees(spinning ? 360 : 0))
         .onAppear {
-            withAnimation(.linear(duration: 7.0).repeatForever(autoreverses: false)) {
-                rotation = 360
+            // 一次性开启无限线性旋转，交给渲染服务器，主线程不参与逐帧计算
+            withAnimation(.linear(duration: rotationSpeed).repeatForever(autoreverses: false)) {
+                spinning = true
             }
         }
     }

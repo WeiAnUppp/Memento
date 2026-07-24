@@ -27,11 +27,17 @@ enum CaptureState: Equatable {
 final class CaptureViewModel {
     var state: CaptureState = .idle
 
-    // 多图支持
+    // 多图支持（最多5张）
+    static let maxImageCount = 5
     var selectedImages: [UIImage] = []
     private var photoGPSs: [CLLocationCoordinate2D?] = []
     /// 每张图的拍摄时间（相册取 EXIF/PHAsset，相机为 nil=保存时刻）。第一张决定记录时间。
     private var photoDates: [Date?] = []
+
+    /// 是否还能添加更多图片
+    var canAddMoreImages: Bool {
+        selectedImages.count < Self.maxImageCount
+    }
 
     // 用户一句话描述（AI 分析前填写）
     var userContext: String = ""
@@ -92,9 +98,12 @@ final class CaptureViewModel {
 
     // MARK: - Public API
 
-    /// 添加新图片（相机拍照或相册选图）
+    /// 添加新图片（相机拍照或相册选图），最多 maxImageCount 张
+    /// ⚠️ 入口即缩到 1024px —— 全分辨率图留在数组里会 OOM
     func addImage(_ image: UIImage, gps: CLLocationCoordinate2D?, takenAt: Date? = nil) {
-        selectedImages.append(image)
+        guard selectedImages.count < Self.maxImageCount else { return }
+        let resized = image.resized(maxDimension: 1024) ?? image
+        selectedImages.append(resized)
         photoGPSs.append(gps)
         photoDates.append(takenAt)
         if case .idle = state {
@@ -135,8 +144,10 @@ final class CaptureViewModel {
         // 立即退出记录 UI
         state = .backgroundAnalyzing
 
-        // 启动后台分析
-        Task { await performBackgroundAnalysis(images: images, context: context, gps: gps) }
+        // 启动后台分析（detached 避免继承 MainActor 导致主线程阻塞）
+        Task.detached(priority: .userInitiated) { [weak self] in
+            await self?.performBackgroundAnalysis(images: images, context: context, gps: gps)
+        }
     }
 
     /// 兼容旧接口：直接传第一张图（来自外部调用）
@@ -158,80 +169,88 @@ final class CaptureViewModel {
 
     /// 保存物品到数据库（前台预览保存 & 后台自动保存共用）
     private func saveItem(with response: AIResponse) {
-        state = .saving
-
         let name = editedName.isEmpty ? response.name : editedName
+        let images = selectedImages
+        let gpsList = photoGPSs
+        let dates = photoDates
+        let context = userContext
 
-        // 保存所有图片到磁盘
-        var imagePaths: [String] = []
-        for image in selectedImages {
-            if let data = image.jpegData(compressionQuality: 0.85) {
-                if let path = try? DatabaseService.saveImage(data) {
-                    imagePaths.append(path)
+        // 重活放后台，不阻塞主线程（否则页面卡顿）
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+
+            // 保存所有图片到磁盘（入口已缩到1024px）
+            var imagePaths: [String] = []
+            for image in images {
+                if let data = image.jpegData(compressionQuality: 0.85) {
+                    if let path = try? DatabaseService.saveImage(data) {
+                        imagePaths.append(path)
+                    }
                 }
             }
-        }
 
-        // 优先使用第一张照片的 EXIF GPS
-        let lat: Double
-        let lon: Double
-        if let gps = photoGPSs.first, let coord = gps {
-            lat = coord.latitude
-            lon = coord.longitude
-        } else if let loc = locationService.currentLocation {
-            lat = loc.coordinate.latitude
-            lon = loc.coordinate.longitude
-        } else {
-            lat = 0
-            lon = 0
-        }
+            // GPS
+            let lat: Double
+            let lon: Double
+            if let gps = gpsList.first, let coord = gps {
+                lat = coord.latitude
+                lon = coord.longitude
+            } else if let loc = self.locationService.currentLocation {
+                lat = loc.coordinate.latitude
+                lon = loc.coordinate.longitude
+            } else {
+                lat = 0
+                lon = 0
+            }
 
-        // imagePaths → JSON 字符串
-        let imagePathJSON = imagePaths.isEmpty
-            ? nil
-            : (try? JSONEncoder().encode(imagePaths)).flatMap { String(data: $0, encoding: .utf8) }
+            let imagePathJSON = imagePaths.isEmpty
+                ? nil
+                : (try? JSONEncoder().encode(imagePaths)).flatMap { String(data: $0, encoding: .utf8) }
 
-        // 周围物品 → 顿号分隔字符串（空数组存 nil）
-        let nearbyStr: String? = {
-            guard let objs = response.nearbyObjects else { return nil }
-            let cleaned = objs
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            return cleaned.isEmpty ? nil : cleaned.joined(separator: "、")
-        }()
+            let nearbyStr: String? = {
+                guard let objs = response.nearbyObjects else { return nil }
+                let cleaned = objs
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                return cleaned.isEmpty ? nil : cleaned.joined(separator: "、")
+            }()
 
-        var item = Item(
-            name: name,
-            itemDescription: response.description,
-            keywords: jsonString(from: response.keywords),
-            scene: response.scene.isEmpty ? nil : response.scene,
-            nearbyObjects: nearbyStr,
-            userNote: userContext.isEmpty ? nil : userContext,
-            latitude: lat,
-            longitude: lon,
-            emoji: response.emoji,
-            imagePath: imagePathJSON,
-            createdAt: photoDates.first.flatMap { $0 } ?? Date(),
-            updatedAt: Date()
-        )
+            var item = Item(
+                name: name,
+                itemDescription: response.description,
+                keywords: jsonString(from: response.keywords),
+                scene: response.scene.isEmpty ? nil : response.scene,
+                nearbyObjects: nearbyStr,
+                userNote: context.isEmpty ? nil : context,
+                latitude: lat,
+                longitude: lon,
+                emoji: response.emoji,
+                imagePath: imagePathJSON,
+                createdAt: dates.first.flatMap { $0 } ?? Date(),
+                updatedAt: Date()
+            )
 
-        // 生成 embedding
-        let text = embeddingService.embeddingText(
-            from: item.name,
-            description: item.itemDescription,
-            keywords: item.keywords,
-            scene: item.scene,
-            nearbyObjects: item.nearbyObjects
-        )
-        let embedding = embeddingService.vector(for: text)
+            let text = self.embeddingService.embeddingText(
+                from: item.name,
+                description: item.itemDescription,
+                keywords: item.keywords,
+                scene: item.scene,
+                nearbyObjects: item.nearbyObjects
+            )
+            let embedding = self.embeddingService.vector(for: text)
 
-        do {
-            let id = try dbService.insert(item, embedding: embedding)
-            item.id = id
-            lastSavedItemCoordinate = item.coordinate
-            state = .saved(item)
-        } catch {
-            state = .error("保存失败: \(error.localizedDescription)")
+            do {
+                let id = try self.dbService.insert(item, embedding: embedding)
+                item.id = id
+                await MainActor.run {
+                    self.lastSavedItemCoordinate = item.coordinate
+                    self.state = .saved(item)
+                }
+            } catch {
+                await MainActor.run {
+                    self.state = .error("保存失败: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -272,16 +291,23 @@ final class CaptureViewModel {
         context: String,
         gps: CLLocationCoordinate2D?
     ) async {
-        // 转换所有图片为 base64
-        let base64List = images.compactMap { image -> String? in
-            guard let data = image.jpegData(compressionQuality: 0.8) else { return nil }
+        // 图片压缩策略：
+        // - 第1张（主物品）：1024px + 0.8 质量 → 保证识别精度
+        // - 其余（环境补充）：512px + 0.6 质量 → 够看清场景即可，防 OOM / 请求体过大
+        let base64List: [String] = images.enumerated().compactMap { index, image in
+            let maxDim: CGFloat = index == 0 ? 1024 : 512
+            let quality: CGFloat = index == 0 ? 0.8 : 0.6
+            let resized = image.resized(maxDimension: maxDim) ?? image
+            guard let data = resized.jpegData(compressionQuality: quality) else { return nil }
             return data.base64EncodedString()
         }
 
         guard !base64List.isEmpty else {
-            analysisDidFail = true
-            analysisErrorMessage = "图片处理失败"
-            state = .error("图片处理失败")
+            await MainActor.run {
+                analysisDidFail = true
+                analysisErrorMessage = "图片处理失败"
+                state = .error("图片处理失败")
+            }
             return
         }
 
@@ -294,10 +320,8 @@ final class CaptureViewModel {
             // 确认仍在后台分析状态（未被取消）
             guard case .backgroundAnalyzing = state else { return }
 
-            await MainActor.run {
-                editedName = response.name
-                saveItem(with: response)
-            }
+            await MainActor.run { editedName = response.name }
+            saveItem(with: response)
         } catch {
             guard case .backgroundAnalyzing = state else { return }
             await MainActor.run {

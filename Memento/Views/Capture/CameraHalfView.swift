@@ -91,6 +91,8 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
 
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
+            // 速度优先：牺牲极限画质换取更短的快门→出图延迟（记录物品无需超高画质）
+            photoOutput.maxPhotoQualityPrioritization = .speed
         }
 
         session.commitConfiguration()
@@ -132,22 +134,29 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
-        guard error == nil,
-              let data = photo.fileDataRepresentation(),
-              let image = UIImage(data: data)
-        else {
+        guard error == nil else {
             errorMessage = "拍照失败"
             return
         }
-        capturedImage = image
-        capturedGPS = Self.extractGPS(from: data)
+        // 用 cgImageRepresentation 直接获取位图，跳过 JPEG 编解码（全分辨率编解码极慢）
+        // 但 CGImage 不含 EXIF 方向，需从 metadata 读取后手动纠正
+        let orientation = Self.imageOrientation(from: photo.metadata)
+        if let cgImage = photo.cgImageRepresentation() {
+            capturedImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: orientation)
+        } else if let data = photo.fileDataRepresentation(),
+                  let image = UIImage(data: data) {
+            capturedImage = image
+        } else {
+            errorMessage = "拍照失败"
+            return
+        }
+        // GPS 从照片元数据直接读，不需要先编码再解码
+        capturedGPS = Self.extractGPS(from: photo.metadata)
     }
 
-    /// 从 JPEG/HEIC 照片数据中提取 EXIF GPS 坐标
-    static func extractGPS(from imageData: Data) -> CLLocationCoordinate2D? {
-        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-              let gps = props[kCGImagePropertyGPSDictionary as String] as? [String: Any],
+    /// 从 AVCapturePhoto metadata 字典中提取 GPS
+    static func extractGPS(from metadata: [String: Any]) -> CLLocationCoordinate2D? {
+        guard let gps = metadata[kCGImagePropertyGPSDictionary as String] as? [String: Any],
               let lat = gps[kCGImagePropertyGPSLatitude as String] as? Double,
               let lon = gps[kCGImagePropertyGPSLongitude as String] as? Double,
               let latRef = gps[kCGImagePropertyGPSLatitudeRef as String] as? String,
@@ -158,6 +167,25 @@ final class CameraModel: NSObject, AVCapturePhotoCaptureDelegate {
             latitude: latRef == "S" ? -lat : lat,
             longitude: lonRef == "W" ? -lon : lon
         )
+    }
+
+    /// 从照片 metadata 中读取 EXIF 方向，转为 UIImage.Orientation
+    static func imageOrientation(from metadata: [String: Any]) -> UIImage.Orientation {
+        guard let raw = metadata[kCGImagePropertyOrientation as String] as? UInt32 else {
+            return .up
+        }
+        // EXIF 方向值 → UIImage.Orientation（1-8 映射）
+        switch raw {
+        case 1: return .up
+        case 2: return .upMirrored
+        case 3: return .down
+        case 4: return .downMirrored
+        case 5: return .leftMirrored
+        case 6: return .right
+        case 7: return .rightMirrored
+        case 8: return .left
+        default: return .up
+        }
     }
 }
 
@@ -233,9 +261,15 @@ struct CameraHalfView: View {
         .onChange(of: camera.capturedImage) { _, image in
             guard let image else { return }
             let gps = camera.capturedGPS
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                onPhotoCaptured(cropToPreview(image), gps, nil)
-                dismiss()
+            let size = previewSize
+            // 裁剪+缩图放后台；拍照完成后第一时间回传，不等人为延迟
+            DispatchQueue.global(qos: .userInitiated).async {
+                // 一次性裁剪 + 缩到 ≤1024px，主线程 addImage 的缩图变成 no-op，消除卡顿
+                let cropped = Self.cropToPreview(image, previewSize: size, maxDimension: 1024)
+                DispatchQueue.main.async {
+                    onPhotoCaptured(cropped, gps, nil)
+                    dismiss()
+                }
             }
             }
         }
@@ -243,30 +277,45 @@ struct CameraHalfView: View {
 
     // MARK: - Crop to Preview
 
-    /// 按预览实际可见区域裁剪照片，实现即拍即所得
-    private func cropToPreview(_ image: UIImage) -> UIImage {
+    /// 按预览实际可见区域裁剪照片，同时缩到 maxDimension，一次渲染完成（即拍即所得）。
+    /// 关键优化：
+    /// - `scale = 1` 避免默认按屏幕 3x 放大渲染（12MP 图 ×3 极慢且占内存）
+    /// - 裁剪与缩图合并成一遍绘制，省去后续 addImage 里的二次缩图（消除主线程卡顿）
+    static func cropToPreview(_ image: UIImage, previewSize: CGSize, maxDimension: CGFloat) -> UIImage {
         guard previewSize.width > 0, previewSize.height > 0 else { return image }
 
         let imageSize = image.size
         let viewAspect = previewSize.width / previewSize.height
         let imageAspect = imageSize.width / imageSize.height
 
-        let targetSize: CGSize
-        let drawOrigin: CGPoint
-
+        // 1) 计算按预览比例裁剪后的可见区域尺寸
+        let cropSize: CGSize
         if imageAspect > viewAspect {
             // 图片比预览宽 → 裁左右
-            targetSize = CGSize(width: imageSize.height * viewAspect, height: imageSize.height)
-            drawOrigin = CGPoint(x: -(imageSize.width - targetSize.width) / 2, y: 0)
+            cropSize = CGSize(width: imageSize.height * viewAspect, height: imageSize.height)
         } else {
             // 图片比预览高 → 裁上下
-            targetSize = CGSize(width: imageSize.width, height: imageSize.width / viewAspect)
-            drawOrigin = CGPoint(x: 0, y: -(imageSize.height - targetSize.height) / 2)
+            cropSize = CGSize(width: imageSize.width, height: imageSize.width / viewAspect)
         }
 
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        // 2) 叠加缩放：裁剪区域长边压到 maxDimension 以内
+        let cropMax = max(cropSize.width, cropSize.height)
+        let scale = cropMax > maxDimension ? maxDimension / cropMax : 1
+        let outputSize = CGSize(width: cropSize.width * scale, height: cropSize.height * scale)
+
+        // 3) 把整图按 scale 画到画布，居中定位使裁剪窗对齐画面中心
+        let drawSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let drawOrigin = CGPoint(
+            x: -(drawSize.width - outputSize.width) / 2,
+            y: -(drawSize.height - outputSize.height) / 2
+        )
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1   // 不按屏幕 3x 放大
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: outputSize, format: format)
         return renderer.image { _ in
-            image.draw(at: drawOrigin)
+            image.draw(in: CGRect(origin: drawOrigin, size: drawSize))
         }
     }
 

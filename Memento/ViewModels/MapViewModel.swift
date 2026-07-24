@@ -36,18 +36,40 @@ final class MapViewModel {
 
     // MARK: - Data Loading
 
-    func loadItems() {
+    /// 后台线程读库，主线程赋值 —— 避免 queue.sync 阻塞主线程造成卡顿
+    /// completion 在主线程回调（供需要读取最新 items 的场景，如详情页更新后重选）
+    func loadItems(completion: (() -> Void)? = nil) {
         isLoading = true
         loadError = nil
 
-        do {
-            items = try dbService.fetchAll()
-        } catch {
-            loadError = error.localizedDescription
-            print("[MapViewModel] 加载失败: \(error)")
+        Task.detached(priority: .userInitiated) {
+            do {
+                let fetched = try DatabaseService.shared.fetchAll()
+                await MainActor.run {
+                    self.items = fetched
+                    self.isLoading = false
+                    completion?()
+                }
+            } catch {
+                await MainActor.run {
+                    self.loadError = error.localizedDescription
+                    self.isLoading = false
+                    print("[MapViewModel] 加载失败: \(error)")
+                    completion?()
+                }
+            }
         }
+    }
 
-        isLoading = false
+    /// 增分插入一条刚保存的物品，不整表重查 —— 保存后地图立即出针，主线程零阻塞
+    /// items 按 createdAt 降序，插到正确位置维持排序一致
+    func addSavedItem(_ item: Item) {
+        if let idx = items.firstIndex(where: { $0.id == item.id }) {
+            items[idx] = item
+            return
+        }
+        let insertIndex = items.firstIndex(where: { $0.createdAt <= item.createdAt }) ?? items.count
+        items.insert(item, at: insertIndex)
     }
 
     // MARK: - Actions

@@ -162,16 +162,26 @@ struct PhotoHalfView: View {
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
 
+        // 不再请求 PHImageManagerMaximumSize（可达数千万像素、解码慢）：
+        // 记录物品只需 ~1024px，请求 2048 上限已留足缩放余量，解码更快。
+        let request = CGFloat(2048)
         imageManager.requestImage(
             for: asset,
-            targetSize: PHImageManagerMaximumSize,
+            targetSize: CGSize(width: request, height: request),
             contentMode: .aspectFit,
             options: options
-        ) { image, _ in
+        ) { image, info in
             guard let image else { return }
-            DispatchQueue.main.async {
-                onPhotoSelected(image, gps, takenAt)
-                dismiss()
+            // 忽略 opportunistic 低清预览帧，只处理最终高清帧
+            let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+            if degraded { return }
+            // 缩到 ≤1024px 放后台，避免主线程 addImage 二次缩图卡顿
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resized = image.resized(maxDimension: 1024) ?? image
+                DispatchQueue.main.async {
+                    onPhotoSelected(resized, gps, takenAt)
+                    dismiss()
+                }
             }
         }
     }

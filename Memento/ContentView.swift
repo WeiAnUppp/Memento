@@ -101,6 +101,9 @@ struct ContentView: View {
     /// ✨ 按钮退出动画分步控制
     @State private var sparklesAnimatingOut = false
 
+    /// 旋转圆点显示 — 独立于 ViewModel 状态，支持平滑消失动画
+    @State private var showSpinningDots = false
+
     // MARK: - Body
 
     var body: some View {
@@ -138,7 +141,7 @@ struct ContentView: View {
             }
 
             // 后台分析旋转图标 — 始终在所有页面可见
-            if captureViewModel.isBackgroundAnalyzing {
+            if showSpinningDots {
                 VStack(spacing: 0) {
                     HStack {
                         SpinningDotsButton {
@@ -150,7 +153,12 @@ struct ContentView: View {
                     .padding(.top, 4)
                     Spacer()
                 }
-                .transition(.scale.combined(with: .opacity))
+                // 出现时缩放弹入好看；消失时只淡出 —— 避免收缩过程中 glassEffect
+                // 每帧重采样背景（与保存瞬间的地图刷新叠加会导致卡顿）
+                .transition(.asymmetric(
+                    insertion: .scale.combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
 
             // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
@@ -225,16 +233,18 @@ struct ContentView: View {
                 // 录音 UI 立即关闭（isRecording 已为 false，showRecordingOverlay 自动跟随）
                 break
             case .saved(let item):
-                mapViewModel.loadItems()
-                mapViewModel.focusOnItem(item)
+                // 增分插入而非整表重查 —— 保存瞬间主线程零阻塞，地图立即出针
+                mapViewModel.addSavedItem(item)
                 photoCardIndex = 0
                 photoDragOffset = .zero
                 showAnalysisProgress = false
+                // 先等旋转圆点消失动画播完（0.35s），再跳 GPS，避免两个动画抢主线程
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    mapViewModel.focusOnItem(item)
+                }
                 if showRecordingOverlay {
-                    // 前台预览保存路径 → 退出录音遮罩
                     dismissRecording(after: 0.6)
                 } else {
-                    // 后台自动保存路径 → 直接重置 VM
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                         captureViewModel.reset()
                     }
@@ -263,6 +273,11 @@ struct ContentView: View {
         .onChange(of: captureViewModel.state) { _, newState in
             if case .readyForInput = newState {
                 sparklesAnimatingOut = false
+            }
+        }
+        .onChange(of: captureViewModel.isBackgroundAnalyzing) { _, showing in
+            withAnimation(.easeOut(duration: 0.35)) {
+                showSpinningDots = showing
             }
         }
     }
@@ -334,14 +349,12 @@ struct ContentView: View {
     @ViewBuilder
     private var bottomBarContent: some View {
         switch captureViewModel.state {
-        case .idle, .saved, .readyForInput, .backgroundAnalyzing:
+        case .idle, .saved, .saving, .readyForInput, .backgroundAnalyzing:
             searchOrRecordBar
         case .analyzing:
             analyzingBar
         case .preview:
             previewBar
-        case .saving:
-            savingBar
         case .error:
             errorBar
         }
@@ -549,26 +562,38 @@ struct ContentView: View {
 
     // MARK: - Shared + Button
 
+    @ViewBuilder
     private var plusMenuButton: some View {
-        Menu {
-            Button {
-                showPhotoSheet = true
+        let canAdd = captureViewModel.canAddMoreImages
+        if canAdd {
+            Menu {
+                Button {
+                    showPhotoSheet = true
+                } label: {
+                    Label("照片", systemImage: "photo.on.rectangle")
+                }
+                Button {
+                    showCameraSheet = true
+                } label: {
+                    Label("相机", systemImage: "camera.fill")
+                }
             } label: {
-                Label("照片", systemImage: "photo.on.rectangle")
+                Image(systemName: "plus")
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .frame(width: 50, height: 50)
             }
-            Button {
-                showCameraSheet = true
-            } label: {
-                Label("相机", systemImage: "camera.fill")
-            }
-        } label: {
+            .glassEffect(.regular.interactive(), in: .circle)
+            .tint(.primary)
+        } else {
             Image(systemName: "plus")
                 .font(.title3)
                 .fontWeight(.medium)
                 .frame(width: 50, height: 50)
+                .glassEffect(.regular, in: .circle)
+                .foregroundStyle(.secondary)
+                .opacity(0.4)
         }
-        .glassEffect(.regular.interactive(), in: .circle)
-        .tint(.primary)
     }
 
     // MARK: - Analyzing Bar
@@ -622,22 +647,6 @@ struct ContentView: View {
             .buttonStyle(.glassProminent)
             .tint(.blue)
         }
-    }
-
-    // MARK: - Saving Bar
-
-    private var savingBar: some View {
-        HStack(spacing: 8) {
-            ProgressView()
-                .tint(.secondary)
-            Text("正在保存…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 50)
-        .glassEffect(.regular, in: .capsule)
     }
 
     // MARK: - Error Bar
@@ -703,7 +712,7 @@ struct ContentView: View {
         case .preview(let response):
             previewOverlay(response: response)
         case .saving:
-            savingOverlayView
+            EmptyView()
         case .error(let message):
             errorOverlayView(message: message)
         case .idle, .backgroundAnalyzing, .saved:
@@ -774,12 +783,6 @@ struct ContentView: View {
             editedName: $captureViewModel.editedName,
             onSave: { captureViewModel.confirmSave() }
         )
-    }
-
-    // MARK: Saving Overlay
-
-    private var savingOverlayView: some View {
-        SavingOverlay()
     }
 
     // MARK: Error Overlay
