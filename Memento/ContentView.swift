@@ -105,6 +105,10 @@ struct ContentView: View {
     @State private var showSpinningDots = false
     /// 旋转圆点完成收拢动画触发
     @State private var dotsCompleting = false
+    /// 玻璃按钮容器缩放（消失动画用）
+    @State private var glassButtonScale: CGFloat = 1
+    /// 玻璃按钮容器透明度（消失动画用）
+    @State private var glassButtonOpacity: Double = 1
 
     // MARK: - Body
 
@@ -150,9 +154,7 @@ struct ContentView: View {
                             action: { showAnalysisProgress = true },
                             isCompleting: $dotsCompleting,
                             onCompletionFinished: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    showSpinningDots = false
-                                }
+                                showSpinningDots = false
                             }
                         )
                         Spacer()
@@ -161,12 +163,9 @@ struct ContentView: View {
                     .padding(.top, 4)
                     Spacer()
                 }
-                // 出现时缩放弹入好看；消失时只淡出 —— 避免收缩过程中 glassEffect
-                // 每帧重采样背景（与保存瞬间的地图刷新叠加会导致卡顿）
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .opacity
-                ))
+                .scaleEffect(glassButtonScale)
+                .opacity(glassButtonOpacity)
+                .transition(.scale.combined(with: .opacity))
             }
 
             // 记录浮层 — 始终存在，用 opacity + offset 控制显隐
@@ -286,12 +285,18 @@ struct ContentView: View {
         .onChange(of: captureViewModel.isBackgroundAnalyzing) { _, showing in
             if showing {
                 dotsCompleting = false
-                withAnimation(.easeOut(duration: 0.25)) {
+                glassButtonScale = 1
+                glassButtonOpacity = 1
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                     showSpinningDots = true
                 }
             } else if showSpinningDots {
-                // 不直接隐藏，先触发圆点收拢动画
+                // 不直接隐藏，先同时触发圆点收拢 + 玻璃缩放淡出
                 dotsCompleting = true
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    glassButtonScale = 0.01
+                    glassButtonOpacity = 0
+                }
             }
         }
     }

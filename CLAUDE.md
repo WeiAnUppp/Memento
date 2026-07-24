@@ -527,11 +527,12 @@ var friendlyChineseFormat: String {
 
 **问题**：AI 分析完成后旋转圆点直接消失，没有过渡动画，体验生硬。
 
-**修复**：两阶段消失动画：
-1. **收拢阶段**（0.5s）：8 个圆点逐个 spring 缩放到 0（各延迟 0.03s）+ 整体淡出。动画在按钮内部执行，不触发外层 glass re-sample，零卡顿。
-2. **隐藏阶段**（0.25s）：收拢完成后回调隐藏整个玻璃按钮。
+**修复**：两阶段消失动画，圆点收拢 + 玻璃缩放淡出同时触发：
+1. **圆点收拢**（0.45s spring）：8 个圆点逐个缩放到 0（各延迟 0.03s）+ 整体淡出，动画在按钮内部执行，不触发 glass re-sample
+2. **玻璃按钮缩放淡出**（0.4s spring）：外层容器 `scaleEffect` 1→0.01 + `opacity` 1→0，在圆点收拢前完成（0.4s < 0.5s），不与延迟 0.45s 的地图定位动画重叠
 
-`SpinningDotsButton` 新增 `isCompleting` binding + `onCompletionFinished` 回调，`ContentView` 通过 `dotsCompleting` 状态驱动流程。
+`SpinningDotsButton` 新增 `isCompleting` binding + `onCompletionFinished` 回调。
+`ContentView` 新增 `glassButtonScale` / `glassButtonOpacity` 状态驱动玻璃容器动画。
 
 **涉及文件**：`Views/Components/SpinningDotsButton.swift`、`ContentView.swift`
 
