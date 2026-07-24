@@ -103,6 +103,8 @@ struct ContentView: View {
 
     /// 旋转圆点显示 — 独立于 ViewModel 状态，支持平滑消失动画
     @State private var showSpinningDots = false
+    /// 旋转圆点完成收拢动画触发
+    @State private var dotsCompleting = false
 
     // MARK: - Body
 
@@ -144,9 +146,15 @@ struct ContentView: View {
             if showSpinningDots {
                 VStack(spacing: 0) {
                     HStack {
-                        SpinningDotsButton {
-                            showAnalysisProgress = true
-                        }
+                        SpinningDotsButton(
+                            action: { showAnalysisProgress = true },
+                            isCompleting: $dotsCompleting,
+                            onCompletionFinished: {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    showSpinningDots = false
+                                }
+                            }
+                        )
                         Spacer()
                     }
                     .padding(.horizontal, 16)
@@ -276,8 +284,14 @@ struct ContentView: View {
             }
         }
         .onChange(of: captureViewModel.isBackgroundAnalyzing) { _, showing in
-            withAnimation(.easeOut(duration: 0.35)) {
-                showSpinningDots = showing
+            if showing {
+                dotsCompleting = false
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showSpinningDots = true
+                }
+            } else if showSpinningDots {
+                // 不直接隐藏，先触发圆点收拢动画
+                dotsCompleting = true
             }
         }
     }

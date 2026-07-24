@@ -515,13 +515,25 @@ var friendlyChineseFormat: String {
 
 ### 思考图标颜色对齐筛选图标（2026-07-24）
 
-**问题**：左上角 `SpinningDotsButton` 的旋转圆点用裸 `Circle()` 无显式颜色，与右上角筛选按钮（`line.horizontal.3.decrease`）色差明显。
+**问题**：左上角 `SpinningDotsButton` 的旋转圆点颜色与右上角筛选按钮（`line.horizontal.3.decrease`）不一致。
 
-**根因**：`Circle().fill(.primary)` 走纯色填充路径，SF Symbol 走 glass tint 管线，两条渲染路径颜色不一致。
+**根因**：`Circle()` shape 的 `.fill()` 不走 glass tint 管线，无论填 `.primary` 还是 `.tint` 都无法与 SF Symbol 模板图像的渲染结果一致。
 
-**修复**：`Circle().fill(.primary)` → `Circle().fill(.tint)`，圆点通过环境的 `.tint(.primary)` 解析颜色，与 SF Symbol 走同一条 glass tint 管线。
+**修复**：`Circle()` → `Image(systemName: "circle.fill")`。SF Symbol 模板图像与筛选图标走完全相同的 glass tint 渲染管线，颜色 100% 一致。
 
 **涉及文件**：`Views/Components/SpinningDotsButton.swift`
+
+### 思考图标消失动画优化（2026-07-24）
+
+**问题**：AI 分析完成后旋转圆点直接消失，没有过渡动画，体验生硬。
+
+**修复**：两阶段消失动画：
+1. **收拢阶段**（0.5s）：8 个圆点逐个 spring 缩放到 0（各延迟 0.03s）+ 整体淡出。动画在按钮内部执行，不触发外层 glass re-sample，零卡顿。
+2. **隐藏阶段**（0.25s）：收拢完成后回调隐藏整个玻璃按钮。
+
+`SpinningDotsButton` 新增 `isCompleting` binding + `onCompletionFinished` 回调，`ContentView` 通过 `dotsCompleting` 状态驱动流程。
+
+**涉及文件**：`Views/Components/SpinningDotsButton.swift`、`ContentView.swift`
 
 ## 复赛文档 & 视频要点
 
