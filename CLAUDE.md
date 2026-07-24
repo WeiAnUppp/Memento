@@ -494,6 +494,35 @@ var friendlyChineseFormat: String {
 
 **涉及文件**：`AIService.swift`
 
+### 保存性能优化 — 增分插入（2026-07-24）
+
+**问题**：AI 后台分析保存后调用 `mapViewModel.loadItems()` 整表重查，保存瞬间主线程阻塞，地图刷新卡顿。
+
+**修复**：`MapViewModel` 新增 `addSavedItem(_:)`，保存后直接追加新物品到 `items` 数组，不重查全表。
+
+**涉及文件**：`ContentView.swift`、`MapViewModel.swift`、`MapHomeView.swift`
+
+### 旋转圆点消失动画优化（2026-07-24）
+
+**问题**：旋转圆点消失时 `.scale.combined(with: .opacity)` 收缩过程中 glassEffect 每帧重采样背景，与保存瞬间的地图刷新叠加导致卡顿。
+
+**修复**：
+- `showSpinningDots` 独立于 ViewModel 状态，支持平滑动画
+- 消失动画改为 `.asymmetric(insertion: .scale + .opacity, removal: .opacity)` 纯淡出
+- 保存后延迟 0.45s 再跳 GPS，避免两个动画抢主线程
+
+**涉及文件**：`ContentView.swift`
+
+### 思考图标颜色对齐筛选图标（2026-07-24）
+
+**问题**：左上角 `SpinningDotsButton` 的旋转圆点用裸 `Circle()` 无显式颜色，与右上角筛选按钮（`line.horizontal.3.decrease`）色差明显。
+
+**根因**：`Circle().fill(.primary)` 走纯色填充路径，SF Symbol 走 glass tint 管线，两条渲染路径颜色不一致。
+
+**修复**：`Circle().fill(.primary)` → `Circle().fill(.tint)`，圆点通过环境的 `.tint(.primary)` 解析颜色，与 SF Symbol 走同一条 glass tint 管线。
+
+**涉及文件**：`Views/Components/SpinningDotsButton.swift`
+
 ## 复赛文档 & 视频要点
 
 ### 文档重点补充（相比初赛）

@@ -44,7 +44,7 @@ struct SpinningDotsView: View {
             ForEach(0..<dotCount, id: \.self) { i in
                 let angle = Double(i) / Double(dotCount) * 2 * .pi
                 Circle()
-                    .fill(.primary)
+                    .fill(.tint)
                     .frame(width: dotSize, height: dotSize)
                     .offset(x: radius * cos(angle), y: radius * sin(angle))
             }
