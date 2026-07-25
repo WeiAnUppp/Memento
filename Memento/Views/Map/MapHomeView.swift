@@ -65,15 +65,44 @@ struct MapHomeView: View {
         }
         .sheet(isPresented: $showDetail) {
             if let item = viewModel.selectedItem {
-                ItemDetailView(item: item, onUpdate: {
-                    // loadItems 现为异步 —— 用 completion 在拿到最新数据后再刷新 selectedItem
-                    viewModel.loadItems {
-                        if let id = item.id,
-                           let updated = viewModel.items.first(where: { $0.id == id }) {
-                            viewModel.selectedItem = updated
+                ZStack(alignment: .topTrailing) {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            // 主图（hero，与列表页展开状态一致）
+                            heroImage(for: item)
+
+                            // 详情内容（与列表页共用 ItemDetailContent）
+                            ItemDetailContent(
+                                item: item,
+                                safeArea: EdgeInsets(),
+                                dismiss: nil,
+                                onUpdate: {
+                                    viewModel.loadItems {
+                                        if let id = item.id,
+                                           let updated = viewModel.items.first(where: { $0.id == id }) {
+                                            viewModel.selectedItem = updated
+                                        }
+                                    }
+                                },
+                                onDeleteRequested: { showDetail = false },
+                                showMainImage: false
+                            )
                         }
                     }
-                })
+                    .background(.background)
+
+                    // X 关闭按钮（与列表详情页一致：glass 风格 xmark）
+                    Button {
+                        showDetail = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 20, height: 30)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.glass)
+                    .padding(.top, 16)
+                    .padding(.trailing, 16)
+                }
             }
         }
         .onAppear {
@@ -88,6 +117,31 @@ struct MapHomeView: View {
             guard locationService.currentLocation != nil else { return }
             viewModel.hasInitialCentered = true
             centerTrigger += 1
+        }
+    }
+
+    // MARK: - Hero Image
+
+    /// 与列表页 AppStoreTransition 展开时的 hero 图片风格一致
+    @ViewBuilder
+    private func heroImage(for item: Item) -> some View {
+        if let firstPath = item.imagePaths.first,
+           let url = DatabaseService.imageURL(for: firstPath),
+           let data = try? Data(contentsOf: url),
+           let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(maxHeight: 300)
+                .clipped()
+        } else {
+            Rectangle()
+                .fill(.quaternary)
+                .frame(height: 200)
+                .overlay {
+                    Text(item.emoji ?? "📦")
+                        .font(.system(size: 64))
+                }
         }
     }
 }
