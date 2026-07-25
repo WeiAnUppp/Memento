@@ -39,7 +39,7 @@ struct ItemGridCard: View {
                         Spacer(minLength: 0)
 
                         Text(item.name)
-                            .font(.subheadline)
+                            .font(.headline)
                             .fontWeight(.semibold)
                             .foregroundStyle(.white)
                             .lineLimit(1)
@@ -58,7 +58,7 @@ struct ItemGridCard: View {
                     }
                     .frame(maxHeight: .infinity)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 20)
                 }
             }
             .clipped()
