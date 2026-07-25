@@ -132,12 +132,12 @@ struct MapHomeView: View {
             Image(uiImage: uiImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(maxHeight: 300)
+                .frame(height: 460)
                 .clipped()
         } else {
             Rectangle()
                 .fill(.quaternary)
-                .frame(height: 200)
+                .frame(height: 460)
                 .overlay {
                     Text(item.emoji ?? "📦")
                         .font(.system(size: 64))
