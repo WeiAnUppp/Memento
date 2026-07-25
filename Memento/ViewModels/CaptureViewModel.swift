@@ -218,6 +218,10 @@ final class CaptureViewModel {
             var item = Item(
                 name: name,
                 itemDescription: response.description,
+                summary: response.summary,
+                displayDescription: response.displayDescription,
+                displayScene: response.displayScene,
+                locationLabel: response.locationLabel,
                 keywords: jsonString(from: response.keywords),
                 scene: response.scene.isEmpty ? nil : response.scene,
                 nearbyObjects: nearbyStr,

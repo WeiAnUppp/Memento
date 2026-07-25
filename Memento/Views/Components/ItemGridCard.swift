@@ -10,10 +10,11 @@ import SwiftUI
 struct ItemGridCard: View {
     let item: Item
 
-    /// 位置文本缩略（取前6字）
+    /// 位置标签：优先 AI 生成的 locationLabel，否则截取场景
     private var shortLocation: String {
+        if let loc = item.locationLabel, !loc.isEmpty { return loc }
+        if let ds = item.displayScene, !ds.isEmpty { return String(ds.prefix(6)) }
         guard let scene = item.scene, !scene.isEmpty else { return "" }
-        if scene.count <= 6 { return scene }
         return String(scene.prefix(6))
     }
 
@@ -37,8 +38,6 @@ struct ItemGridCard: View {
             // ④ 文字贴在边框上 — 相对于 Color.clear 的边界定位，与图片无关
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Spacer(minLength: 0)
-
                     Text(item.name)
                         .font(.headline)
                         .fontWeight(.semibold)
@@ -57,10 +56,9 @@ struct ItemGridCard: View {
                     .foregroundStyle(.white.opacity(0.75))
                     .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.leading, 12)
-                .padding(.trailing, 16)
-                .padding(.bottom, 20)
+                .padding(.trailing, 12)
+                .padding(.bottom, 12)
             }
             .clipped()
     }

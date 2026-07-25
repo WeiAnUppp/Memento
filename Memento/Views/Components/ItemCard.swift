@@ -78,10 +78,17 @@ struct ItemCard: View {
 
     // MARK: - Location & Date
 
+    private var cardLocationText: String {
+        if let loc = item.locationLabel, !loc.isEmpty { return loc }
+        if let ds = item.displayScene, !ds.isEmpty { return String(ds.prefix(6)) }
+        return item.scene ?? ""
+    }
+
     private var locationAndDate: some View {
         HStack(spacing: 4) {
-            if let scene = item.scene, !scene.isEmpty {
-                Text(scene)
+            let loc = cardLocationText
+            if !loc.isEmpty {
+                Text(loc)
                     .lineLimit(1)
                 Text("·")
                     .foregroundStyle(.tertiary)

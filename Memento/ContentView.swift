@@ -29,6 +29,7 @@ enum AppPage: String, CaseIterable {
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedPage: AppPage = .map
+    @State private var listRefreshTrigger = 0
     @State private var showSearch = false
     @State private var settingsNavigationDepth = 0
 
@@ -242,6 +243,7 @@ struct ContentView: View {
             case .saved(let item):
                 // 增分插入而非整表重查 —— 保存瞬间主线程零阻塞，地图立即出针
                 mapViewModel.addSavedItem(item)
+                listRefreshTrigger += 1
                 photoCardIndex = 0
                 photoDragOffset = .zero
                 showAnalysisProgress = false
@@ -839,7 +841,12 @@ struct ContentView: View {
                         withAnimation(.smooth(duration: 0.35)) {
                             listBarHidden = !visible
                         }
-                    }
+                    },
+                    onNavigateToMap: { item in
+                        mapViewModel.focusOnItem(item)
+                        selectedPage = .map
+                    },
+                    refreshTrigger: listRefreshTrigger
                 )
                 .disabled(isRecording)
             }

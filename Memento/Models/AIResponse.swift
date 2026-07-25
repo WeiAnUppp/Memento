@@ -12,6 +12,14 @@ import Foundation
 struct AIResponse: Codable, Equatable {
     let name: String
     let description: String
+    /// 一句话摘要（~15字），用于详情页快速预览
+    let summary: String?
+    /// 详情页展示用简短描述（~50字），从完整 description 提炼
+    let displayDescription: String?
+    /// 详情页展示用简短场景（~30字），从完整 scene 提炼
+    let displayScene: String?
+    /// 极简位置标签（≤8字），如"家里客厅""办公室桌上"，用于副标题
+    let locationLabel: String?
     let scene: String
     let keywords: [String: String]
     let emoji: String?
@@ -20,7 +28,11 @@ struct AIResponse: Codable, Equatable {
     let nearbyObjects: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case name, description, scene, keywords, emoji
+        case name, description, summary
+        case displayDescription = "display_description"
+        case displayScene = "display_scene"
+        case locationLabel = "location_label"
+        case scene, keywords, emoji
         case nearbyObjects = "nearby_objects"
     }
 
@@ -28,6 +40,10 @@ struct AIResponse: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decode(String.self, forKey: .name)
         description = try c.decode(String.self, forKey: .description)
+        summary = try? c.decode(String.self, forKey: .summary)
+        displayDescription = try? c.decode(String.self, forKey: .displayDescription)
+        displayScene = try? c.decode(String.self, forKey: .displayScene)
+        locationLabel = try? c.decode(String.self, forKey: .locationLabel)
         scene = (try? c.decode(String.self, forKey: .scene)) ?? ""
         keywords = (try? c.decode([String: String].self, forKey: .keywords)) ?? [:]
         emoji = try? c.decode(String.self, forKey: .emoji)
@@ -35,10 +51,17 @@ struct AIResponse: Codable, Equatable {
         nearbyObjects = try? c.decode([String].self, forKey: .nearbyObjects)
     }
 
-    init(name: String, description: String, scene: String,
-         keywords: [String: String], emoji: String?, nearbyObjects: [String]? = nil) {
+    init(name: String, description: String, summary: String? = nil,
+         displayDescription: String? = nil, displayScene: String? = nil,
+         locationLabel: String? = nil,
+         scene: String, keywords: [String: String], emoji: String?,
+         nearbyObjects: [String]? = nil) {
         self.name = name
         self.description = description
+        self.summary = summary
+        self.displayDescription = displayDescription
+        self.displayScene = displayScene
+        self.locationLabel = locationLabel
         self.scene = scene
         self.keywords = keywords
         self.emoji = emoji

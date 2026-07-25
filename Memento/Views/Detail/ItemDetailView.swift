@@ -86,6 +86,37 @@ struct ItemDetailView: View {
                         Text(item.name).font(.title2).fontWeight(.semibold)
                     }
 
+                    // 多图预览网格（跳过第一张主图）
+                    if paths.count > 1 {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("更多照片").font(.caption).foregroundStyle(.secondary)
+                            LazyVGrid(
+                                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                                spacing: 8
+                            ) {
+                                ForEach(Array(paths.dropFirst().enumerated()), id: \.offset) { index, imagePath in
+                                    if let url = DatabaseService.imageURL(for: imagePath),
+                                       let data = try? Data(contentsOf: url),
+                                       let uiImage = UIImage(data: data) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .aspectRatio(1, contentMode: .fill)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    } else {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(Color.gray.opacity(0.15))
+                                            .aspectRatio(1, contentMode: .fit)
+                                            .overlay {
+                                                Image(systemName: "photo")
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 描述
                     VStack(alignment: .leading, spacing: 4) {
                         Text("描述").font(.caption).foregroundStyle(.secondary)

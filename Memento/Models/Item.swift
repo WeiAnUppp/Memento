@@ -12,6 +12,15 @@ struct Item: Identifiable, Codable, Equatable {
     var id: Int64?
     var name: String
     var itemDescription: String
+    /// AI 生成的一句话摘要（~20字），用于详情页快速预览。
+    /// 旧数据无此字段时降级显示 description 前段。
+    var summary: String?
+    /// 详情页展示用简短描述（~50字），AI 从完整描述中提炼
+    var displayDescription: String?
+    /// 详情页展示用简短场景（~30字），AI 从完整场景中提炼
+    var displayScene: String?
+    /// 极简位置标签（≤8字），用于详情页副标题，如"家里客厅""办公室桌上"
+    var locationLabel: String?
     var keywords: String?
     var scene: String?
     /// 画面中相邻/周围可见的物品与环境（AI 记录时提取），用于空间关系查询

@@ -97,6 +97,10 @@ final class DatabaseService {
         // 迁移：为旧表添加后续版本新增的列（ALTER 失败=列已存在，忽略）
         migrateAddColumn("emoji", type: "TEXT")
         migrateAddColumn("nearby_objects", type: "TEXT")
+        migrateAddColumn("summary", type: "TEXT")
+        migrateAddColumn("display_description", type: "TEXT")
+        migrateAddColumn("display_scene", type: "TEXT")
+        migrateAddColumn("location_label", type: "TEXT")
     }
 
     /// 幂等地为 items 表添加列。列已存在时 ALTER 会失败，静默忽略即可。
@@ -188,11 +192,21 @@ final class DatabaseService {
         let updatedAtStr = String(cString: sqlite3_column_text(stmt, 11))
         // index 12 = nearby_objects（所有 SELECT 都把它放在 updated_at 之后）
         let nearbyObjects = columnText(stmt, 12)
+        // index 13 = summary
+        let summary = columnText(stmt, 13)
+        // index 14 = display_description, 15 = display_scene, 16 = location_label
+        let displayDescription = columnText(stmt, 14)
+        let displayScene = columnText(stmt, 15)
+        let locationLabel = columnText(stmt, 16)
 
         return Item(
             id: id,
             name: name,
             itemDescription: desc,
+            summary: summary,
+            displayDescription: displayDescription,
+            displayScene: displayScene,
+            locationLabel: locationLabel,
             keywords: keywords,
             scene: scene,
             nearbyObjects: nearbyObjects,
@@ -212,10 +226,12 @@ final class DatabaseService {
     func insert(_ item: Item, embedding: [Float]? = nil) throws -> Int64 {
         return try queue.sync {
             let sql = """
-            INSERT INTO items (name, description, keywords, scene, nearby_objects, user_note,
+            INSERT INTO items (name, description, summary, display_description, display_scene,
+                               location_label,
+                               keywords, scene, nearby_objects, user_note,
                                latitude, longitude, image_path, emoji, embedding,
                                created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
             var stmt: OpaquePointer?
@@ -231,17 +247,21 @@ final class DatabaseService {
 
             bindText(stmt, 1, item.name)
             bindText(stmt, 2, item.itemDescription)
-            bindOptionalText(stmt, 3, item.keywords)
-            bindOptionalText(stmt, 4, item.scene)
-            bindOptionalText(stmt, 5, item.nearbyObjects)
-            bindOptionalText(stmt, 6, item.userNote)
-            sqlite3_bind_double(stmt, 7, item.latitude)
-            sqlite3_bind_double(stmt, 8, item.longitude)
-            bindOptionalText(stmt, 9, item.imagePath)
-            bindOptionalText(stmt, 10, item.emoji)
-            bindEmbedding(stmt, 11, embedding)
-            bindText(stmt, 12, createdAt)
-            bindText(stmt, 13, now)
+            bindOptionalText(stmt, 3, item.summary)
+            bindOptionalText(stmt, 4, item.displayDescription)
+            bindOptionalText(stmt, 5, item.displayScene)
+            bindOptionalText(stmt, 6, item.locationLabel)
+            bindOptionalText(stmt, 7, item.keywords)
+            bindOptionalText(stmt, 8, item.scene)
+            bindOptionalText(stmt, 9, item.nearbyObjects)
+            bindOptionalText(stmt, 10, item.userNote)
+            sqlite3_bind_double(stmt, 11, item.latitude)
+            sqlite3_bind_double(stmt, 12, item.longitude)
+            bindOptionalText(stmt, 13, item.imagePath)
+            bindOptionalText(stmt, 14, item.emoji)
+            bindEmbedding(stmt, 15, embedding)
+            bindText(stmt, 16, createdAt)
+            bindText(stmt, 17, now)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw DatabaseError.insertFailed(errmsg())
@@ -256,7 +276,7 @@ final class DatabaseService {
             let sql = """
             SELECT id, name, description, keywords, scene, user_note,
                    latitude, longitude, image_path, emoji, created_at, updated_at,
-                   nearby_objects
+                   nearby_objects, summary, display_description, display_scene, location_label
             FROM items ORDER BY created_at DESC;
             """
 
@@ -281,7 +301,7 @@ final class DatabaseService {
             let sql = """
             SELECT id, name, description, keywords, scene, user_note,
                    latitude, longitude, image_path, emoji, created_at, updated_at,
-                   nearby_objects
+                   nearby_objects, summary, display_description, display_scene, location_label
             FROM items WHERE id = ?;
             """
 
@@ -304,8 +324,9 @@ final class DatabaseService {
             }
 
             let sql = """
-            UPDATE items SET name=?, description=?, keywords=?, scene=?,
-                   nearby_objects=?, user_note=?, latitude=?, longitude=?, image_path=?, emoji=?,
+            UPDATE items SET name=?, description=?, summary=?, display_description=?, display_scene=?,
+                   location_label=?,
+                   keywords=?, scene=?, nearby_objects=?, user_note=?, latitude=?, longitude=?, image_path=?, emoji=?,
                    updated_at=?
             WHERE id=?;
             """
@@ -318,16 +339,20 @@ final class DatabaseService {
 
             bindText(stmt, 1, item.name)
             bindText(stmt, 2, item.itemDescription)
-            bindOptionalText(stmt, 3, item.keywords)
-            bindOptionalText(stmt, 4, item.scene)
-            bindOptionalText(stmt, 5, item.nearbyObjects)
-            bindOptionalText(stmt, 6, item.userNote)
-            sqlite3_bind_double(stmt, 7, item.latitude)
-            sqlite3_bind_double(stmt, 8, item.longitude)
-            bindOptionalText(stmt, 9, item.imagePath)
-            bindOptionalText(stmt, 10, item.emoji)
-            bindText(stmt, 11, formatDate(Date()))
-            sqlite3_bind_int64(stmt, 12, id)
+            bindOptionalText(stmt, 3, item.summary)
+            bindOptionalText(stmt, 4, item.displayDescription)
+            bindOptionalText(stmt, 5, item.displayScene)
+            bindOptionalText(stmt, 6, item.locationLabel)
+            bindOptionalText(stmt, 7, item.keywords)
+            bindOptionalText(stmt, 8, item.scene)
+            bindOptionalText(stmt, 9, item.nearbyObjects)
+            bindOptionalText(stmt, 10, item.userNote)
+            sqlite3_bind_double(stmt, 11, item.latitude)
+            sqlite3_bind_double(stmt, 12, item.longitude)
+            bindOptionalText(stmt, 13, item.imagePath)
+            bindOptionalText(stmt, 14, item.emoji)
+            bindText(stmt, 15, formatDate(Date()))
+            sqlite3_bind_int64(stmt, 16, id)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw DatabaseError.updateFailed(errmsg())
@@ -417,11 +442,11 @@ final class DatabaseService {
     /// 获取所有物品及其 embedding 向量（用于搜索排序）
     func fetchAllWithEmbeddings() throws -> [(Item, [Float]?)] {
         return try queue.sync {
-            // nearby_objects 在 12（rowToItem 读取），embedding 顺延到 13
+            // nearby_objects=12, summary=13, display_description=14, display_scene=15, location_label=16, embedding=17
             let sql = """
             SELECT id, name, description, keywords, scene, user_note,
                    latitude, longitude, image_path, emoji, created_at, updated_at,
-                   nearby_objects, embedding
+                   nearby_objects, summary, display_description, display_scene, location_label, embedding
             FROM items ORDER BY created_at DESC;
             """
 
@@ -434,7 +459,7 @@ final class DatabaseService {
             var results: [(Item, [Float]?)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 if let item = rowToItem(stmt) {
-                    let embedding = readEmbedding(stmt, col: 13)
+                    let embedding = readEmbedding(stmt, col: 17)
                     results.append((item, embedding))
                 }
             }
