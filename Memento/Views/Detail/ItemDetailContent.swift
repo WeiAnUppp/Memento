@@ -89,7 +89,7 @@ struct ItemDetailContent: View {
                             Image(uiImage: uiImage)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(maxHeight: 280)
+                                .frame(maxWidth: .infinity, maxHeight: 280)
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
                                 .tag(index)
                         } else {
@@ -101,7 +101,7 @@ struct ItemDetailContent: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
-                            .frame(maxHeight: 280)
+                            .frame(maxWidth: .infinity, maxHeight: 280)
                             .tag(index)
                         }
                     }
@@ -358,21 +358,27 @@ struct ItemDetailContent: View {
             Button {
                 // 编辑功能（可后续接入编辑页）
             } label: {
-                Label("编辑", systemImage: "pencil")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil")
+                    Text("编辑")
+                }
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
             }
             .background(.quaternary, in: Capsule())
 
             Button(role: .destructive) {
                 handleDelete()
             } label: {
-                Label("删除", systemImage: "trash")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                    Text("删除")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
             }
             .background(.quaternary, in: Capsule())
         }

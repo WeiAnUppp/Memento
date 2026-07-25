@@ -123,25 +123,30 @@ struct MapHomeView: View {
     // MARK: - Hero Image
 
     /// 与列表页 AppStoreTransition 展开时的 hero 图片风格一致
+    /// 用容器包裹避免宽图撑破 ScrollView 布局
     @ViewBuilder
     private func heroImage(for item: Item) -> some View {
-        if let firstPath = item.imagePaths.first,
-           let url = DatabaseService.imageURL(for: firstPath),
-           let data = try? Data(contentsOf: url),
-           let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(height: 460)
-                .clipped()
-        } else {
-            Rectangle()
-                .fill(.quaternary)
-                .frame(height: 460)
-                .overlay {
-                    Text(item.emoji ?? "📦")
-                        .font(.system(size: 64))
+        Rectangle()
+            .foregroundStyle(.clear)
+            .frame(height: 460)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if let firstPath = item.imagePaths.first,
+                   let url = DatabaseService.imageURL(for: firstPath),
+                   let data = try? Data(contentsOf: url),
+                   let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle()
+                        .fill(.quaternary)
+                        .overlay {
+                            Text(item.emoji ?? "📦")
+                                .font(.system(size: 64))
+                        }
                 }
-        }
+            }
+            .clipped()
     }
 }
