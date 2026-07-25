@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var selectedPage: AppPage = .map
     @State private var listRefreshTrigger = 0
     @State private var showSearch = false
+    @State private var launchSearchWithVoice = false
     @State private var settingsNavigationDepth = 0
 
     /// 半屏相机
@@ -50,6 +51,9 @@ struct ContentView: View {
 
     /// 记录物品 ViewModel —— 融入底部栏
     @State private var captureViewModel = CaptureViewModel()
+
+    /// 搜索 ViewModel —— 提升到 ContentView，搜索结果在页面切换后保留
+    @State private var searchViewModel = SearchViewModel()
 
     /// 遮罩+浮层动画专用 Bool — 与 ViewModel 状态解耦，确保动画事务正确传播
     @State private var showRecordingOverlay = false
@@ -196,10 +200,17 @@ struct ContentView: View {
             showRecordingOverlay = recording
         }
         .fullScreenCover(isPresented: $showSearch) {
-            SearchModalView { item in
-                mapViewModel.focusOnItem(item)
-                selectedPage = .map
-            }
+            SearchModalView(
+                viewModel: searchViewModel,
+                autoStartVoice: launchSearchWithVoice,
+                onResultSelected: { item in
+                    mapViewModel.focusOnItem(item)
+                    selectedPage = .map
+                }
+            )
+        }
+        .onChange(of: showSearch) { _, showing in
+            if !showing { launchSearchWithVoice = false }
         }
         // 后台分析进度 sheet
         .sheet(isPresented: $showAnalysisProgress) {
@@ -448,7 +459,9 @@ struct ContentView: View {
                         .disabled(captureViewModel.speechService.isRecording)
 
                     if captureViewModel.userContext.isEmpty && !captureViewModel.speechService.isRecording {
-                        shimmerPlaceholder
+                        Text("简单描述一下...")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
                             .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
                     if captureViewModel.speechService.isRecording {
@@ -468,7 +481,7 @@ struct ContentView: View {
                 let isRec = captureViewModel.speechService.isRecording
                 let iconName = hasText && !isRec
                     ? "xmark.circle.fill"
-                    : (isRec ? "stop.fill" : "mic.fill")
+                    : (isRec ? "stop.fill" : "mic")
                 let iconColor: Color = isRec
                     ? .red
                     : (hasText ? .secondary : .secondary)
@@ -502,83 +515,41 @@ struct ContentView: View {
             .padding(.horizontal, 14)
             .frame(height: 50)
             .glassEffect(.regular, in: .capsule)
-            .glowingBorder(
-                shape: .capsule,
-                lineWidth: 1.5,
-                glowRadius: 4,
-                isActive: captureViewModel.speechService.isRecording
-            )
         } else {
-            // 搜索入口
-            Button {
-                showSearch = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    Text("搜索物品...")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Image(systemName: "mic.fill")
-                        .foregroundStyle(.secondary)
+            // 搜索入口 — 左：打开搜索弹窗 / 右：语音搜索
+            HStack(spacing: 0) {
+                // 左侧：搜索文字区域 → 打开搜索弹窗
+                Button {
+                    showSearch = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        Text("搜索物品...")
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 50)
-                .glassEffect(.regular, in: .capsule)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+
+                // 右侧：麦克风按钮 → 语音搜索
+                Button {
+                    launchSearchWithVoice = true
+                    showSearch = true
+                } label: {
+                    Image(systemName: "mic")
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 12)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .tint(.primary)
+            .padding(.horizontal, 14)
+            .frame(height: 50)
+            .glassEffect(.regular, in: .capsule)
         }
-    }
-
-    // MARK: - Shimmer Placeholder
-
-    /// 文字渐变流光 — 2 根光带交替扫过，慢速丝滑无缝循环
-    private var shimmerPlaceholder: some View {
-        let isDark = colorScheme == .dark
-        let dimOpacity: Double = isDark ? 0.10 : 0.18
-        let peakOpacity: Double = isDark ? 0.52 : 0.65
-        let bandHalf: Double = 0.12
-
-        return TimelineView(.animation) { timeline in
-            let seconds = timeline.date.timeIntervalSince1970
-            let phase = seconds.truncatingRemainder(dividingBy: 8.0) / 8.0
-
-            Text("简单描述一下...")
-                .font(.body)
-                .foregroundStyle(gradient(for: phase, dim: dimOpacity, peak: peakOpacity, bandHalf: bandHalf))
-        }
-        .allowsHitTesting(false)
-    }
-
-    /// 生成 2 光带梯度，位置包裹到 [0,1] 后排好序，首尾颜色一致确保无缝
-    private func gradient(
-        for phase: Double,
-        dim dimOpacity: Double,
-        peak peakOpacity: Double,
-        bandHalf: Double
-    ) -> LinearGradient {
-        let wrap: (Double) -> Double = { ($0.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1) }
-
-        var stops: [Gradient.Stop] = []
-        for i in 0..<2 {
-            let c = wrap(phase + Double(i) / 2)
-            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c - bandHalf)))
-            stops.append(.init(color: .primary.opacity(peakOpacity), location: c))
-            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c + bandHalf)))
-        }
-
-        stops.sort { $0.location < $1.location }
-
-        // 首尾颜色一致 → 边界无缝
-        if let first = stops.first, first.location > 0.001 {
-            stops.insert(.init(color: stops.last!.color, location: 0), at: 0)
-        }
-        if let last = stops.last, last.location < 0.999 {
-            stops.append(.init(color: stops.first!.color, location: 1))
-        }
-
-        return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
     }
 
     // MARK: - Shared + Button
@@ -865,54 +836,94 @@ struct ContentView: View {
 // MARK: - Search Modal
 
 private struct SearchModalView: View {
+    @Bindable var viewModel: SearchViewModel
+    let autoStartVoice: Bool
     let onResultSelected: (Item) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @State private var viewModel = SearchViewModel()
     @FocusState private var isSearchFocused: Bool
+    @State private var selectedSegment = 0
 
     /// 麦克风录音最大时长保护（秒）
     private let maxRecordingDuration: TimeInterval = 60
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 搜索输入栏
-                searchInputBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
 
-                // 内容区
-                SearchResultView(
-                    results: viewModel.results,
-                    isSearching: viewModel.isSearching,
-                    hasSearched: viewModel.hasSearched,
-                    searchError: viewModel.searchError,
-                    suggestionText: viewModel.suggestionText,
-                    onResultSelected: { item in
-                        dismiss()
-                        // 延迟等 dismiss 动画完成后再定位
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            onResultSelected(item)
-                        }
-                    },
-                    onRetry: {
-                        viewModel.performSearch()
+                VStack(spacing: 0) {
+                    // 搜索输入栏
+                    searchInputBar
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+
+                    // 分段选择：最近搜索 / 搜索结果
+                    segmentTabs
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+
+                    // 内容区
+                    if selectedSegment == 0 {
+                        recentSearchesList
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        SearchResultView(
+                            results: viewModel.results,
+                            isSearching: viewModel.isSearching,
+                            hasSearched: viewModel.hasSearched,
+                            searchError: viewModel.searchError,
+                            suggestionText: viewModel.suggestionText,
+                            onResultSelected: { item in
+                                dismiss()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    onResultSelected(item)
+                                }
+                            },
+                            onRetry: {
+                                viewModel.performSearch()
+                            }
+                        )
+                        .frame(maxHeight: .infinity)
                     }
-                )
-                .frame(maxHeight: .infinity)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isSearchFocused = false
+                }
             }
             .navigationTitle("搜索")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("取消") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .tint(.primary)
                 }
             }
         }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
             isSearchFocused = true
+            if !viewModel.results.isEmpty {
+                selectedSegment = 1
+            }
+            if autoStartVoice {
+                // 给 SpeechService 一点时间检查授权状态
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    viewModel.startVoiceInput()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + maxRecordingDuration) { [weak viewModel = viewModel] in
+                        guard viewModel?.speechService.isRecording == true else { return }
+                        viewModel?.stopVoiceInput()
+                    }
+                }
+            }
         }
         .alert("搜索出错", isPresented: Binding(
             get: { viewModel.searchError != nil },
@@ -927,13 +938,89 @@ private struct SearchModalView: View {
         } message: {
             Text(viewModel.searchError ?? "")
         }
+        // 搜索时自动切到搜索结果
+        .onChange(of: viewModel.hasSearched) { _, searched in
+            if searched { selectedSegment = 1 }
+        }
         // 语音识别结果回填
         .onChange(of: viewModel.speechService.isRecording) { _, recording in
             if !recording {
                 let cleaned = viewModel.speechService.cleanedTranscript
                 if !cleaned.isEmpty {
                     viewModel.queryText = cleaned
+                    selectedSegment = 1
+                    viewModel.performSearch()
                 }
+            }
+        }
+        .onDisappear {
+            viewModel.queryText = ""
+        }
+    }
+
+    // MARK: - Segment Tabs
+
+    private var segmentTabs: some View {
+        Picker("搜索模式", selection: $selectedSegment) {
+            Text("最近搜索").tag(0)
+            Text("搜索结果").tag(1)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    // MARK: - Recent Searches List
+
+    private var recentSearchesList: some View {
+        Group {
+            if viewModel.recentSearches.isEmpty {
+                ContentUnavailableView(
+                    "搜索物品",
+                    systemImage: "magnifyingglass",
+                    description: Text("随心问，我会帮你找到它。")
+                )
+            } else {
+                List {
+                    Section {
+                        ForEach(viewModel.recentSearches, id: \.self) { query in
+                            Button {
+                                viewModel.queryText = query
+                                selectedSegment = 1
+                                viewModel.performSearch()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .foregroundStyle(.secondary)
+                                        .font(.subheadline)
+                                    Text(query)
+                                        .font(.body)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { indexSet in
+                            for i in indexSet {
+                                viewModel.deleteRecentSearch(viewModel.recentSearches[i])
+                            }
+                        }
+                    } header: {
+                        if !viewModel.recentSearches.isEmpty {
+                            HStack {
+                                Text("最近搜索")
+                                Spacer()
+                                Button("清空") {
+                                    withAnimation { viewModel.clearRecentSearches() }
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(.blue)
+                            }
+                            .textCase(nil)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -956,6 +1043,7 @@ private struct SearchModalView: View {
                     .focused($isSearchFocused)
                     .disabled(viewModel.speechService.isRecording)
                     .onSubmit {
+                        selectedSegment = 1
                         viewModel.performSearch()
                     }
 
@@ -975,7 +1063,7 @@ private struct SearchModalView: View {
             let isRec = viewModel.speechService.isRecording
             let iconName = hasText && !isRec
                 ? "xmark.circle.fill"
-                : (isRec ? "stop.fill" : "mic.fill")
+                : (isRec ? "stop.fill" : "mic")
             let iconColor: Color = isRec
                 ? .red
                 : .secondary
@@ -1009,59 +1097,15 @@ private struct SearchModalView: View {
         .padding(.leading, 10)
         .frame(height: 50)
         .glassEffect(.regular, in: .capsule)
-        .glowingBorder(
-            shape: .capsule,
-            lineWidth: 1.5,
-            glowRadius: 4,
-            isActive: viewModel.speechService.isRecording
-        )
     }
 
     // MARK: - Shimmer Placeholder
 
     private var searchShimmerPlaceholder: some View {
-        let isDark = colorScheme == .dark
-        let dimOpacity: Double = isDark ? 0.10 : 0.18
-        let peakOpacity: Double = isDark ? 0.52 : 0.65
-        let bandHalf: Double = 0.12
-
-        return TimelineView(.animation) { timeline in
-            let seconds = timeline.date.timeIntervalSince1970
-            let phase = seconds.truncatingRemainder(dividingBy: 8.0) / 8.0
-
-            Text("描述你想找的物品...")
-                .font(.body)
-                .foregroundStyle(searchGradient(for: phase, dim: dimOpacity, peak: peakOpacity, bandHalf: bandHalf))
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func searchGradient(
-        for phase: Double,
-        dim dimOpacity: Double,
-        peak peakOpacity: Double,
-        bandHalf: Double
-    ) -> LinearGradient {
-        let wrap: (Double) -> Double = { ($0.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1) }
-
-        var stops: [Gradient.Stop] = []
-        for i in 0..<2 {
-            let c = wrap(phase + Double(i) / 2)
-            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c - bandHalf)))
-            stops.append(.init(color: .primary.opacity(peakOpacity), location: c))
-            stops.append(.init(color: .primary.opacity(dimOpacity), location: wrap(c + bandHalf)))
-        }
-
-        stops.sort { $0.location < $1.location }
-
-        if let first = stops.first, first.location > 0.001 {
-            stops.insert(.init(color: stops.last!.color, location: 0), at: 0)
-        }
-        if let last = stops.last, last.location < 0.999 {
-            stops.append(.init(color: stops.first!.color, location: 1))
-        }
-
-        return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
+        Text("描述你想找的物品...")
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .allowsHitTesting(false)
     }
 }
 

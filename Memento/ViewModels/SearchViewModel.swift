@@ -32,6 +32,10 @@ final class SearchViewModel {
 
     var suggestionText: String?
 
+    /// 最近搜索记录
+    var recentSearches: [String] = []
+    private let recentSearchesKey = "memento_recent_searches"
+
     // MARK: - Location Search
 
     private let geocoder = CLGeocoder()
@@ -44,6 +48,41 @@ final class SearchViewModel {
 
     init() {
         Task { await speechService.requestAuthorization() }
+        loadRecentSearches()
+    }
+
+    // MARK: - Recent Searches
+
+    func addRecentSearch(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        recentSearches.removeAll { $0 == trimmed }
+        recentSearches.insert(trimmed, at: 0)
+        if recentSearches.count > 20 { recentSearches = Array(recentSearches.prefix(20)) }
+        saveRecentSearches()
+    }
+
+    func deleteRecentSearch(_ query: String) {
+        recentSearches.removeAll { $0 == query }
+        saveRecentSearches()
+    }
+
+    func clearRecentSearches() {
+        recentSearches.removeAll()
+        saveRecentSearches()
+    }
+
+    private func loadRecentSearches() {
+        if let data = UserDefaults.standard.data(forKey: recentSearchesKey),
+           let saved = try? JSONDecoder().decode([String].self, from: data) {
+            recentSearches = saved
+        }
+    }
+
+    private func saveRecentSearches() {
+        if let data = try? JSONEncoder().encode(recentSearches) {
+            UserDefaults.standard.set(data, forKey: recentSearchesKey)
+        }
     }
 
     // MARK: - Voice Input
@@ -74,9 +113,12 @@ final class SearchViewModel {
         let query = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
+        addRecentSearch(query)
+
         isSearching = true
         searchError = nil
         hasSearched = true
+        results = []
         parsedKeywords = nil
         suggestionText = nil
 
@@ -256,7 +298,11 @@ final class SearchViewModel {
             await MainActor.run {
                 results = ranked
                 isSearching = false
-                suggestionText = makeSuggestion(results: ranked)
+            }
+
+            // 异步请求 AI 真总结
+            if APIConfig.shared.isConfigured {
+                await requestAISummary(query: query, results: ranked)
             }
 
         } catch {
@@ -888,21 +934,99 @@ final class SearchViewModel {
 
     // MARK: ── Suggestion ──
 
-    private func makeSuggestion(results: [SearchResult]) -> String? {
-        // 只用高置信结果播报，避免把"可能相关"的弱项也算进"找到 N 个"
-        let strong = results.filter { $0.isStrong }
-        guard !strong.isEmpty else {
-            return results.isEmpty ? nil : "没有很确定的匹配，下面是几个可能相关的"
-        }
-        let top = strong.prefix(3)
-        let names = top.map(\.item.name)
-        if strong.count == 1 {
-            if let scene = strong[0].item.scene, !scene.isEmpty {
-                return "找到「\(names[0])」，在\(scene)"
+    /// 调用 AI 生成搜索总结
+    private func requestAISummary(query: String, results: [SearchResult]) async {
+        let top = results.filter { $0.isStrong }.prefix(5)
+        guard !top.isEmpty else { return }
+
+        // 并行逆地理编码，获取每个物品的地址
+        let items: [SearchResultItem] = await withTaskGroup(
+            of: (Int, String?).self,
+            returning: [SearchResultItem].self
+        ) { group in
+            for (i, r) in top.enumerated() {
+                group.addTask {
+                    let addr = await self.reverseGeocodeAddress(
+                        lat: r.item.latitude,
+                        lon: r.item.longitude
+                    )
+                    return (i, addr)
+                }
             }
-            return "找到「\(names[0])」"
+
+            var results: [(Int, String?)] = []
+            for await pair in group { results.append(pair) }
+            let addrMap = Dictionary(uniqueKeysWithValues: results)
+
+            return top.enumerated().map { i, r in
+                SearchResultItem(
+                    name: r.item.name,
+                    scene: r.item.scene,
+                    locationLabel: r.item.locationLabel,
+                    nearby: r.item.nearbyObjects,
+                    address: addrMap[i] ?? nil
+                )
+            }
         }
-        return "找到\(strong.count)个相关物品：\(names.joined(separator: "、"))"
+
+        do {
+            let summary = try await aiService.summarizeSearchResults(query: query, topItems: items)
+            let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            await MainActor.run {
+                suggestionText = Self.smartTruncate(trimmed, maxChars: 120)
+            }
+        } catch {
+            print("[SearchViewModel] AI 总结失败: \(error)")
+        }
+    }
+
+    /// 逆地理编码：GPS → 地址字符串
+    private func reverseGeocodeAddress(lat: Double, lon: Double) async -> String? {
+        guard lat != 0 || lon != 0 else { return nil }
+        return await withCheckedContinuation { continuation in
+            let loc = CLLocation(latitude: lat, longitude: lon)
+            CLGeocoder().reverseGeocodeLocation(loc) { placemarks, _ in
+                guard let place = placemarks?.first else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                // 省市区+街道，尽量精确
+                let parts = [
+                    place.administrativeArea,
+                    place.locality,
+                    place.subLocality,
+                    place.thoroughfare,
+                ].compactMap { $0 }
+                // 去重（上海市上海市 → 上海市）
+                var seen = Set<String>()
+                let unique = parts.filter { seen.insert($0).inserted }
+                let addr = unique.isEmpty ? nil : unique.joined()
+                continuation.resume(returning: addr)
+            }
+        }
+    }
+
+    /// 智能截断：在句子边界（。！？）处断开，避免卡在半句话
+    private static func smartTruncate(_ text: String, maxChars: Int) -> String {
+        guard text.count > maxChars else { return text }
+        let target = text.prefix(maxChars)
+        // 找最后一个句子结束标点
+        let sentenceEnders: [Character] = ["。", "！", "？", "，", "；"]
+        for ch in target.reversed() {
+            if sentenceEnders.contains(ch) {
+                if let idx = target.lastIndex(of: ch),
+                   target.distance(from: target.startIndex, to: idx) >= maxChars / 2 {
+                    return String(target[...idx])
+                }
+                break
+            }
+        }
+        // 没找到合适断点，退回到最后一个空格或直接截断
+        if let lastSpace = target.lastIndex(of: " ") {
+            return String(target[..<lastSpace])
+        }
+        return String(target)
     }
 }
 

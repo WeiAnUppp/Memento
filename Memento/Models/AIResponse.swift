@@ -131,6 +131,22 @@ struct SearchQuery: Codable {
     }
 }
 
+// MARK: - AI Search Summary
+
+/// 传递给 AI 做总结的物品简要信息
+struct SearchResultItem: Codable {
+    let name: String
+    let scene: String?
+    let locationLabel: String?
+    let nearby: String?
+    let address: String?
+}
+
+/// AI 搜索总结响应
+struct SummaryResponse: Codable {
+    let summary: String
+}
+
 // MARK: - Time Filter
 
 struct TimeFilter: Codable {

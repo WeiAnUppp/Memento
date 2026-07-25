@@ -12,7 +12,7 @@ struct VoiceButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "mic.fill")
+            Image(systemName: "mic")
                 .font(.title3)
         }
         .glassEffect(.regular.interactive(), in: .circle)

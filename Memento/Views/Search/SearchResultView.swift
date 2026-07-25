@@ -21,13 +21,14 @@ struct SearchResultView: View {
     let onRetry: () -> Void
 
     @State private var ttsSpeaker = AVSpeechSynthesizer()
+    @State private var displayedCharCount = 0
+    @State private var typewriterTimer: Timer?
 
     var body: some View {
         Group {
             if isSearching {
                 searchingState
             } else if searchError != nil {
-                // 错误通过系统 alert 弹窗展示，这里只显示空态
                 emptyState
             } else if hasSearched && results.isEmpty {
                 noResultsState
@@ -35,6 +36,39 @@ struct SearchResultView: View {
                 resultsList
             } else {
                 emptyState
+            }
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .onAppear {
+            if let text = suggestionText, !text.isEmpty {
+                displayedCharCount = text.count
+            }
+        }
+        .onChange(of: suggestionText) { _, newText in
+            startTypewriter(for: newText)
+        }
+        .onDisappear {
+            typewriterTimer?.invalidate()
+            ttsSpeaker.stopSpeaking(at: .immediate)
+        }
+    }
+
+    // MARK: - Typewriter
+
+    private func startTypewriter(for text: String?) {
+        typewriterTimer?.invalidate()
+        ttsSpeaker.stopSpeaking(at: .immediate)
+        displayedCharCount = 0
+        guard let text, !text.isEmpty else { return }
+
+        let total = text.count
+        let interval = 0.04
+        var i = 0
+        typewriterTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { timer in
+            i += 1
+            displayedCharCount = min(i, total)
+            if i >= total {
+                timer.invalidate()
             }
         }
     }
@@ -45,7 +79,7 @@ struct SearchResultView: View {
         ContentUnavailableView(
             "搜索物品",
             systemImage: "magnifyingglass",
-            description: Text("随心问，我会帮你找到它\n比如「黑色的钥匙」「昨天放的那个」「键盘旁边的」\n「用来充电的」「卧室里最大的盒子」")
+            description: Text("随心问，我会帮你找到它。")
         )
     }
 
@@ -122,45 +156,109 @@ struct SearchResultView: View {
     private var weakResults: [SearchResult] { results.filter { !$0.isStrong } }
 
     private var resultsList: some View {
-        VStack(spacing: 0) {
-            // TTS 播报栏
-            if let suggestion = suggestionText, !suggestion.isEmpty {
-                ttsBar(text: suggestion)
-            }
-
-            // 结果列表：高置信直接展示，弱相关折叠进"可能相关"
-            List {
-                ForEach(strongResults) { result in
-                    resultRow(result)
+        ScrollView {
+            VStack(spacing: 0) {
+                // AI 总结卡片（打字效果 + 自适应高度）
+                if let suggestion = suggestionText, !suggestion.isEmpty {
+                    aiSummaryCard(text: suggestion)
+                        .padding(.bottom, 20)
                 }
 
+                // 结果网格：双列卡片，和列表页样式完全一致
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 15),
+                        GridItem(.flexible(), spacing: 15)
+                    ],
+                    spacing: 15
+                ) {
+                    ForEach(strongResults) { result in
+                        resultCard(result)
+                    }
+                }
+                .padding(.horizontal, 15)
+
+                // 弱相关折叠区
                 if !weakResults.isEmpty {
-                    Section {
-                        if showWeakResults {
+                    weakSectionHeader
+                        .padding(.horizontal, 15)
+                        .padding(.top, 24)
+
+                    if showWeakResults {
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 15),
+                                GridItem(.flexible(), spacing: 15)
+                            ],
+                            spacing: 15
+                        ) {
                             ForEach(weakResults) { result in
-                                resultRow(result)
+                                resultCard(result)
                             }
                         }
-                    } header: {
-                        weakSectionHeader
+                        .padding(.horizontal, 15)
+                        .padding(.top, 4)
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
     }
 
-    private func resultRow(_ result: SearchResult) -> some View {
-        Button {
-            onResultSelected(result.item)
-        } label: {
-            SearchResultCard(result: result)
+    private func resultCard(_ result: SearchResult) -> some View {
+        let item = result.item
+        return AppStoreTransition(
+            config: .init(cardCornerRadius: 16)
+        ) { isExpanded, dismiss in
+            if isExpanded {
+                expandedHero(for: item, dismiss: dismiss)
+            } else {
+                ItemGridCard(item: item)
+            }
+        } content: { safeArea, dismiss in
+            ItemDetailContent(
+                item: item,
+                safeArea: safeArea,
+                dismiss: dismiss,
+                onUpdate: {},
+                onNavigateToMap: { [onResultSelected] in
+                    onResultSelected(item)
+                }
+            )
         }
-        .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .frame(height: 200)
+    }
+
+    // MARK: - Expanded Hero
+
+    private func expandedHero(for item: Item, dismiss: (() -> Void)?) -> some View {
+        Group {
+            if let firstPath = item.imagePaths.first,
+               let url = DatabaseService.imageURL(for: firstPath),
+               let data = try? Data(contentsOf: url),
+               let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Rectangle()
+                    .fill(.quaternary)
+                    .overlay {
+                        Text(item.emoji ?? "📦")
+                            .font(.system(size: 64))
+                    }
+            }
+        }
+        .overlay {
+            if let dismiss {
+                Rectangle()
+                    .foregroundStyle(.clear)
+                    .contentShape(.rect)
+                    .onTapGesture { dismiss() }
+                    .transition(.identity)
+            }
+        }
     }
 
     private var weakSectionHeader: some View {
@@ -184,38 +282,60 @@ struct SearchResultView: View {
             .textCase(nil)
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 4, trailing: 16))
+        .padding(.bottom, 10)
     }
 
-    // MARK: - TTS Bar
+    // MARK: - AI Summary Card
 
-    private func ttsBar(text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(.blue)
-                .font(.subheadline)
+    private func aiSummaryCard(text: String) -> some View {
+        let prefix = String(text.prefix(displayedCharCount))
+        let isTyping = displayedCharCount < text.count
 
-            Text(text)
-                .font(.subheadline)
-                .lineLimit(1)
-
-            Spacer()
-
-            Button {
-                ttsSpeaker.stopSpeaking(at: .immediate)
-                speak(text)
-            } label: {
-                Image(systemName: "speaker.wave.2")
-                    .font(.title3)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
                     .foregroundStyle(.blue)
+                    .font(.subheadline)
+                Text("AI 总结")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.blue)
+                if isTyping {
+                    Text("输入中…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                // 手动播报/停止
+                Button {
+                    if ttsSpeaker.isSpeaking {
+                        ttsSpeaker.stopSpeaking(at: .immediate)
+                    } else {
+                        speak(text)
+                    }
+                } label: {
+                    Image(systemName: ttsSpeaker.isSpeaking ? "stop.fill" : "speaker.wave.2")
+                        .font(.title3)
+                        .foregroundStyle(ttsSpeaker.isSpeaking ? .red : .blue)
+                }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.15), value: ttsSpeaker.isSpeaking)
             }
-            .buttonStyle(.plain)
+
+            Text(prefix)
+                .font(.body)
+                .foregroundStyle(.primary)
+                + (isTyping ? Text("|").foregroundStyle(.blue) : Text(""))
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.blue.opacity(0.15), lineWidth: 0.5)
+        )
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 10)
     }
 
     private func speak(_ text: String) {
@@ -223,203 +343,6 @@ struct SearchResultView: View {
         utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
         utterance.rate = 0.5
         ttsSpeaker.speak(utterance)
-    }
-}
-
-// MARK: - Search Result Card
-
-/// 搜索结果卡片：缩略图 + 名称/描述 + 匹配标签 + 场景·时间 + 匹配度
-struct SearchResultCard: View {
-    let result: SearchResult
-    let item: Item
-
-    init(result: SearchResult) {
-        self.result = result
-        self.item = result.item
-    }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            // 左侧：缩略图
-            thumbnailView
-
-            // 中间：名称 + 描述 + 匹配标签 + 场景·时间
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.name)
-                    .font(.headline)
-                    .lineLimit(2)
-
-                Text(item.itemDescription)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(minHeight: 36, alignment: .top)
-
-                // 匹配原因标签行
-                matchReasonTags
-
-                locationAndDate
-            }
-
-            Spacer()
-
-            // 右侧：匹配度
-            scoreBadge
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.quaternary, lineWidth: 0.5)
-        )
-    }
-
-    // MARK: - Match Reason Tags
-
-    @ViewBuilder
-    private var matchReasonTags: some View {
-        if let details = result.matchDetails {
-            HStack(spacing: 6) {
-                // 名称命中 → 蓝色标签
-                if details.nameMatched {
-                    matchChip("名称匹配", color: .blue)
-                }
-
-                // 其他命中字段
-                ForEach(otherMatchChips(from: details), id: \.self) { label in
-                    matchChip(label, color: .secondary)
-                }
-
-                // 时间标签 → 橙色
-                if let timeLabel = details.timeRelevance {
-                    matchChip(timeLabel, color: .orange)
-                }
-
-                // 位置距离 → 绿色
-                if let dist = details.locationDistance {
-                    matchChip(formatDistance(dist), color: .green)
-                }
-            }
-        }
-    }
-
-    private func matchChip(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(color.opacity(0.10))
-            )
-    }
-
-    private func fieldLabel(_ field: String) -> String {
-        switch field {
-        case "description": return "特征匹配"
-        case "keywords": return "关键词"
-        case "scene": return "场景匹配"
-        case "userNote": return "备注"
-        default: return ""
-        }
-    }
-
-    private func otherMatchChips(from details: SearchResult.MatchDetails) -> [String] {
-        details.matchedFields
-            .filter { $0 != "name" }
-            .prefix(2)
-            .compactMap { fieldLabel($0) }
-            .filter { !$0.isEmpty }
-    }
-
-    private func formatDistance(_ km: Double) -> String {
-        if km < 1 { return "<1km" }
-        if km < 10 { return String(format: "%.1fkm", km) }
-        return String(format: "%.0fkm", km)
-    }
-
-    // MARK: - Thumbnail
-
-    @ViewBuilder
-    private var thumbnailView: some View {
-        let paths = item.imagePaths
-        if let firstPath = paths.first,
-           let url = DatabaseService.imageURL(for: firstPath),
-           let data = try? Data(contentsOf: url),
-           let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        } else {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.quaternary)
-                .frame(width: 64, height: 64)
-                .overlay {
-                    Text(item.emoji ?? "📦")
-                        .font(.system(size: 28))
-                }
-        }
-    }
-
-    // MARK: - Location & Date
-
-    private var locationAndDate: some View {
-        HStack(spacing: 4) {
-            if let scene = item.scene, !scene.isEmpty {
-                Text(scene)
-            }
-            if item.scene?.isEmpty == false {
-                Text("·")
-                    .foregroundStyle(.tertiary)
-            }
-            Text(item.createdAt.friendlyChineseFormat)
-        }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-    }
-
-    // MARK: - Score Badge
-
-    @ViewBuilder
-    private var scoreBadge: some View {
-        if result.isBrowse {
-            // 浏览模式是"列举"，不是"匹配"，展示时间标签而非误导性的百分比
-            let label = result.matchDetails?.timeRelevance ?? "浏览"
-            Text(label)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.12))
-                )
-        } else {
-            let pct = Int(result.score * 100)
-            let color: Color = {
-                if result.score >= 0.7 { return .green }
-                if result.score >= 0.4 { return .orange }
-                return .secondary
-            }()
-
-            Text("\(pct)%")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(color)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(color.opacity(0.12))
-                )
-        }
     }
 }
 

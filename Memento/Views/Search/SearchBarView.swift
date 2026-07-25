@@ -28,7 +28,7 @@ struct SearchBarView: View {
             Button {
                 // TODO: Day 11 — 语音输入
             } label: {
-                Image(systemName: "mic.fill")
+                Image(systemName: "mic")
                     .font(.title3)
             }
             .glassEffect(.regular.interactive(), in: .circle)

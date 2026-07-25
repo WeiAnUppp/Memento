@@ -285,7 +285,7 @@ struct CaptureView: View {
     private var iconName: String {
         if viewModel.speechService.isRecording { return "stop.fill" }
         if !viewModel.userContext.isEmpty { return "xmark" }
-        return "mic.fill"
+        return "mic"
     }
 
     // MARK: - Analyzing

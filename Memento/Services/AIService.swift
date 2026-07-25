@@ -324,6 +324,52 @@ timeFilter 格式示例：
         return response
     }
 
+    /// 对搜索结果做 AI 总结
+    /// - Parameters:
+    ///   - query: 用户原始搜索词
+    ///   - topItems: 排名靠前的物品简要信息（名称、位置、周边物品）
+    /// - Returns: 100字以内的自然语言总结
+    func summarizeSearchResults(query: String, topItems: [SearchResultItem]) async throws -> String {
+        guard !topItems.isEmpty else { return "没有找到匹配的物品" }
+
+        let itemsText = topItems.enumerated().map { i, item in
+            var parts: [String] = ["\(i + 1). \(item.name)"]
+            if let label = item.locationLabel, !label.isEmpty { parts.append("位置:\(label)") }
+            if let scene = item.scene, !scene.isEmpty { parts.append("场景:\(scene)") }
+            if let address = item.address, !address.isEmpty { parts.append("地址:\(address)") }
+            if let nearby = item.nearby, !nearby.isEmpty { parts.append("附近:\(nearby)") }
+            return parts.joined(separator: "，")
+        }.joined(separator: "\n")
+
+        let systemPrompt = """
+        你是「忆物」App 的搜索助手。用户搜索了自己的物品库，以下是排名靠前的匹配结果。
+        你的任务：用自然的语言告诉用户东西在哪。
+
+        要求：
+        - 100字左右，用自然的完整句子，不要生硬罗列
+        - 开头要呼应搜索内容，比如用户搜"钥匙"，就说"你找的钥匙在..."；用户搜"蓝色盒子"，就说"蓝色盒子放在..."
+        - ⭐ 位置越精确越好：如果数据说"家里玄关鞋柜第一层""办公室抽屉"，就这样说，不要简化为"在家""在办公室"
+        - 地址能精确就精确，比如"上海市浦东新区张江镇"，不要简化为"上海"
+        - 其次说周边有什么
+        - 单个结果示例（搜索"钥匙"）："你找的钥匙在玄关鞋柜第一层，旁边有雨伞和门垫，上海市浦东新区张江镇。"
+        - 多个结果示例（搜索"桌上的东西"）："桌上放着鼠标、充电线和U盘，鼠标在书桌左边，U盘在抽屉里，上海市浦东新区。"
+        - 注意：位置部分和地址部分都要说，用完整句子而非列表
+        - 只用提供的信息，不要编造
+        - 返回 JSON：{"summary": "你的总结"}
+        """
+
+        let userContent: [[String: Any]] = [
+            ["type": "text", "text": "用户搜索: \"\(query)\"\n\n匹配结果:\n\(itemsText)\n\n请总结。只返回JSON。"]
+        ]
+
+        let response: SummaryResponse = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userContent: userContent,
+            maxTokens: 256
+        )
+        return response.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Core API Call
 
     /// 通用 OpenAI 兼容 Chat Completions 调用
