@@ -38,7 +38,7 @@ struct SettingsView: View {
     @Binding var selectedPage: AppPage
     @Binding var navigationDepth: Int
 
-    @State private var config = APIConfig()
+    @State private var config = APIConfig.shared
     @State private var path = NavigationPath()
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
 
@@ -153,7 +153,7 @@ struct SettingsView: View {
         } header: {
             Text("API 配置")
         } footer: {
-            Text("支持任何 OpenAI 兼容的 API 服务，包括 OpenAI、DeepSeek、Moonshot、智谱、通义千问、MiMo 等。")
+            Text("支持任何 OpenAI 兼容的 API 服务。")
         }
     }
 
@@ -261,8 +261,11 @@ private struct URLEditView: View {
         }
         .settingsNavBar(title: "API 地址")
         .onAppear { tempURL = config.apiBaseURL }
-        .onDisappear {
-            config.apiBaseURL = tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        .onChange(of: tempURL) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if config.apiBaseURL != trimmed {
+                config.apiBaseURL = trimmed
+            }
         }
     }
 }
@@ -304,8 +307,11 @@ private struct KeyEditView: View {
         }
         .settingsNavBar(title: "API Key")
         .onAppear { tempKey = config.apiKey }
-        .onDisappear {
-            config.apiKey = tempKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        .onChange(of: tempKey) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if config.apiKey != trimmed {
+                config.apiKey = trimmed
+            }
         }
     }
 }

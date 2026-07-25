@@ -358,7 +358,7 @@ struct ItemDetailContent: View {
             Button {
                 // 编辑功能（可后续接入编辑页）
             } label: {
-                Text("编辑")
+                Label("编辑", systemImage: "pencil")
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
@@ -366,12 +366,11 @@ struct ItemDetailContent: View {
             }
             .background(.quaternary, in: Capsule())
 
-            Button {
+            Button(role: .destructive) {
                 handleDelete()
             } label: {
-                Text("删除")
+                Label("删除", systemImage: "trash")
                     .font(.headline)
-                    .foregroundStyle(.red)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
             }

@@ -26,8 +26,9 @@ struct SearchResultView: View {
         Group {
             if isSearching {
                 searchingState
-            } else if let error = searchError {
-                errorState(error)
+            } else if searchError != nil {
+                // 错误通过系统 alert 弹窗展示，这里只显示空态
+                emptyState
             } else if hasSearched && results.isEmpty {
                 noResultsState
             } else if !results.isEmpty {

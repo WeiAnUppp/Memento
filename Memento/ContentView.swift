@@ -914,6 +914,19 @@ private struct SearchModalView: View {
         .onAppear {
             isSearchFocused = true
         }
+        .alert("搜索出错", isPresented: Binding(
+            get: { viewModel.searchError != nil },
+            set: { if !$0 { viewModel.searchError = nil } }
+        )) {
+            Button("取消", role: .cancel) {
+                viewModel.searchError = nil
+            }
+            Button("重试") {
+                viewModel.performSearch()
+            }
+        } message: {
+            Text(viewModel.searchError ?? "")
+        }
         // 语音识别结果回填
         .onChange(of: viewModel.speechService.isRecording) { _, recording in
             if !recording {

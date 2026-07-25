@@ -84,6 +84,8 @@ enum ModelPreset: String, CaseIterable {
 /// （后续 API Key 应迁移到 Keychain）
 @Observable
 class APIConfig {
+    static let shared = APIConfig()
+
     var apiBaseURL: String {
         didSet { UserDefaults.standard.set(apiBaseURL, forKey: keyAPIBaseURL) }
     }

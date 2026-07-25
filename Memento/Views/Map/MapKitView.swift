@@ -132,9 +132,17 @@ struct MapKitView: UIViewRepresentable {
                 }
             }
 
+            // 同坐标去重偏移：相同位置的物品给微小偏移（≈1米），
+            // 远看仍聚类，放大到极限即可分开拖拽
+            let displayCoords = Self.computeDisplayCoordinates(for: items)
+
             for item in items {
                 guard let id = item.id, annotationMap[id] == nil else { continue }
                 let point = ItemPoint(item: item)
+                // 应用去重偏移后的显示坐标
+                if let displayCoord = displayCoords[id] {
+                    point.coordinate = displayCoord
+                }
                 annotationMap[id] = point
                 mapView.addAnnotation(point)
             }
@@ -142,10 +150,11 @@ struct MapKitView: UIViewRepresentable {
             for item in items {
                 guard let id = item.id, id != movingId, let point = annotationMap[id] else { continue }
 
-                let newCoord = item.coordinate
-                if abs(point.coordinate.latitude - newCoord.latitude) > 0.000001 ||
-                   abs(point.coordinate.longitude - newCoord.longitude) > 0.000001 {
-                    point.coordinate = newCoord
+                // 使用去重后的显示坐标判断是否需要更新
+                let targetCoord = displayCoords[id] ?? item.coordinate
+                if abs(point.coordinate.latitude - targetCoord.latitude) > 0.000001 ||
+                   abs(point.coordinate.longitude - targetCoord.longitude) > 0.000001 {
+                    point.coordinate = targetCoord
                 }
 
                 let itemEmoji = item.emoji ?? "📍"
@@ -154,6 +163,51 @@ struct MapKitView: UIViewRepresentable {
                     view.image = pinImage(emoji: itemEmoji)
                 }
             }
+        }
+
+        /// 同坐标物品去重偏移：相同的 GPS 坐标给微小偏移（≈1米），
+        /// 地图缩小时原生聚类仍正常工作，放足够大后分开显示
+        private static func computeDisplayCoordinates(for items: [Item]) -> [Int64: CLLocationCoordinate2D] {
+            let roundPrecision: Double = 1_000_000 // 6 位小数 ≈ 11cm
+            let offsetPerItem: Double = 0.000012   // ≈ 1.3 米
+
+            // 按四舍五入后的坐标分组
+            var groups: [String: [Item]] = [:]
+            for item in items {
+                guard let id = item.id else { continue }
+                let key = "\(round(item.latitude * roundPrecision) / roundPrecision)," +
+                          "\(round(item.longitude * roundPrecision) / roundPrecision)"
+                groups[key, default: []].append(item)
+            }
+
+            var result: [Int64: CLLocationCoordinate2D] = [:]
+            for (_, groupItems) in groups {
+                guard groupItems.count > 1 else {
+                    // 单个物品无冲突，直接用原坐标
+                    if let item = groupItems.first, let id = item.id {
+                        result[id] = item.coordinate
+                    }
+                    continue
+                }
+
+                // 多个物品同坐标：按黄金角均匀分散
+                for (index, item) in groupItems.enumerated() {
+                    guard let id = item.id else { continue }
+                    if index == 0 {
+                        // 第一个保持原位
+                        result[id] = item.coordinate
+                    } else {
+                        let angle = Double(id) * 137.5 * .pi / 180 // 黄金角
+                        let offsetLat = cos(angle) * offsetPerItem * Double(index)
+                        let offsetLon = sin(angle) * offsetPerItem * Double(index)
+                        result[id] = CLLocationCoordinate2D(
+                            latitude: item.latitude + offsetLat,
+                            longitude: item.longitude + offsetLon
+                        )
+                    }
+                }
+            }
+            return result
         }
 
         // MARK: Refresh Annotations

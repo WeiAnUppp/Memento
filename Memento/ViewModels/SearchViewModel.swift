@@ -99,7 +99,7 @@ final class SearchViewModel {
             var queryIntent: String? = nil
             var spatialAnchor: String? = nil
 
-            if APIConfig().isConfigured {
+            if APIConfig.shared.isConfigured {
                 do {
                     let parsed = try await aiService.parseQuery(query)
                     aiKeywords = parsed.keywords
@@ -192,7 +192,7 @@ final class SearchViewModel {
             // expansionTerms：同义/相关词（AI expandedQueries + fuzzy + 本地词典）→ 命中加分
             var coreTerms: [String]
             var expansionTerms: [String]
-            if APIConfig().isConfigured {
+            if APIConfig.shared.isConfigured {
                 var core = Set<String>()
                 for (_, value) in aiKeywords {
                     let v = value.trimmingCharacters(in: .whitespaces)
@@ -307,7 +307,7 @@ final class SearchViewModel {
         queryIntent: String?
     ) -> [SearchResult] {
         let hasVector = queryEmbedding != nil
-        let hasAPI = APIConfig().isConfigured
+        let hasAPI = APIConfig.shared.isConfigured
         let queryChars = Set(rawQuery)
 
         // 时间过滤已在 doSearch 中完成，此处直接使用传入的候选列表

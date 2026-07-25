@@ -14,7 +14,7 @@ import Foundation
 struct AIService {
     private let config: APIConfig
 
-    init(config: APIConfig = APIConfig()) {
+    init(config: APIConfig = .shared) {
         self.config = config
     }
 
