@@ -19,12 +19,15 @@ struct ItemCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+
+                Spacer(minLength: 0)
 
                 locationAndDate
             }
+            .frame(minHeight: 64)
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 16))
         .overlay(
@@ -79,15 +82,14 @@ struct ItemCard: View {
         HStack(spacing: 4) {
             if let scene = item.scene, !scene.isEmpty {
                 Text(scene)
-            }
-            if item.scene?.isEmpty == false {
+                    .lineLimit(1)
                 Text("·")
                     .foregroundStyle(.tertiary)
             }
             Text(item.createdAt.friendlyChineseFormat)
+                .layoutPriority(1)
         }
         .font(.subheadline)
         .foregroundStyle(.secondary)
-        .lineLimit(1)
     }
 }

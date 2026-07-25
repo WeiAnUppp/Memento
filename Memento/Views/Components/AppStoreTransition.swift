@@ -39,7 +39,9 @@ struct AppStoreTransition<Hero: View, Content: View>: View {
                 .onGeometryChange(for: CGRect.self) {
                     $0.frame(in: .global)
                 } action: { newValue in
-                    buttonScale = newValue.width / sourceRect.width
+                    if sourceRect.width > 0 {
+                        buttonScale = newValue.width / sourceRect.width
+                    }
                 }
             
         }

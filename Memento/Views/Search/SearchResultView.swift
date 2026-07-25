@@ -246,12 +246,13 @@ struct SearchResultCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 Text(item.itemDescription)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .frame(minHeight: 36, alignment: .top)
 
                 // 匹配原因标签行
                 matchReasonTags
@@ -264,7 +265,7 @@ struct SearchResultCard: View {
             // 右侧：匹配度
             scoreBadge
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 16))
         .overlay(
