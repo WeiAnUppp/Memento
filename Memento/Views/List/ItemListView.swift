@@ -34,6 +34,31 @@ struct ItemListView: View {
             }
         }
     }
+    
+//    AppStoreTransition { isExpanded, dismiss in
+//        Image(.pic)
+//            .resizable()
+//            .aspectRatio(contentMode: .fill)
+//            .overlay {
+//                if let dismiss {
+//                    Rectangle()
+//                        .foregroundStyle(.clear)
+//                        .contentShape(.rect)
+//                        .onTapGesture {
+//                            dismiss()
+//                        }
+//                        .transition(.identity)
+//                }
+//            }
+//    } content: { safeArea, dismiss in
+//        Color.red
+//            .frame(height: 1900)
+//            .contentShape(.rect)
+//            .onTapGesture {
+//                dismiss()
+//            }
+//    }
+//    .frame(height: 415)
 
     // MARK: - List
 
