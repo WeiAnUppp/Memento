@@ -8,6 +8,21 @@
 import SwiftUI
 import AVFoundation
 
+// MARK: - TTS Delegate
+
+/// 轻量代理，确保 AVSpeechSynthesizer 生命周期内 isSpeaking 状态可靠
+final class TTSDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    var onFinish: (() -> Void)?
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        onFinish?()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        onFinish?()
+    }
+}
+
 // MARK: - Search Result View
 
 /// 搜索结果列表，处理空态 / 搜索中 / 结果 / 无结果 / 错误等状态
@@ -21,6 +36,7 @@ struct SearchResultView: View {
     let onRetry: () -> Void
 
     @State private var ttsSpeaker = AVSpeechSynthesizer()
+    @State private var ttsDelegate: TTSDelegate?
     @State private var displayedCharCount = 0
     @State private var typewriterTimer: Timer?
 
@@ -40,6 +56,9 @@ struct SearchResultView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .onAppear {
+            let delegate = TTSDelegate()
+            ttsDelegate = delegate
+            ttsSpeaker.delegate = delegate
             if let text = suggestionText, !text.isEmpty {
                 displayedCharCount = text.count
             }
@@ -338,8 +357,15 @@ struct SearchResultView: View {
     }
 
     private func speak(_ text: String) {
+        // 确保音频会话处于播放模式（录音后会话可能卡在 .record 类别）
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playback {
+            try? session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try? session.setActive(true)
+        }
+
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
+        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN") ?? AVSpeechSynthesisVoice(language: "zh-TW")
         utterance.rate = 0.5
         ttsSpeaker.speak(utterance)
     }

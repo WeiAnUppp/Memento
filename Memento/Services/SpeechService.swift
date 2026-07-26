@@ -107,6 +107,11 @@ final class SpeechService: NSObject, SFSpeechRecognizerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.cleanupRecognition()
         }
+        // 释放音频会话，否则 TTS 播报无法播放（.record 类别会阻止播放）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard self?.isRecording == false else { return }
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func cleanupRecognition() {
