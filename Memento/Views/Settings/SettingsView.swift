@@ -38,7 +38,9 @@ struct SettingsView: View {
     @Binding var selectedPage: AppPage
     @Binding var navigationDepth: Int
 
-    @State private var config = APIConfig.shared
+    /// 直接读取共享实例，避免 @State + @Observable class 组合
+    /// 在 NavigationStack push/pop 时变更传播不可靠的问题
+    private var config: APIConfig { APIConfig.shared }
     @State private var path = NavigationPath()
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
 
@@ -195,14 +197,30 @@ struct SettingsView: View {
 private struct ProviderPickerView: View {
     @Bindable var config: APIConfig
     @Environment(\.dismiss) private var dismiss
+    @State private var previousProvider: APIProvider
+
+    init(config: APIConfig) {
+        self.config = config
+        self._previousProvider = State(initialValue: config.selectedProvider)
+    }
 
     var body: some View {
         List {
             Section {
                 ForEach(APIProvider.allCases, id: \.self) { provider in
                     Button {
+                        let wasDifferent = previousProvider != provider
                         config.applyProvider(provider)
-                        dismiss()
+                        // 切换到不同服务商时，提示用户更新 API Key
+                        if wasDifferent && !config.apiKey.isEmpty {
+                            dismiss()
+                            // 短暂延迟后弹出提示
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                showKeyReminder = true
+                            }
+                        } else {
+                            dismiss()
+                        }
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -221,11 +239,19 @@ private struct ProviderPickerView: View {
                     }
                 }
             } footer: {
-                Text("选择后将自动填入默认的 API 地址和推荐模型。")
+                Text("选择后将自动填入默认的 API 地址和推荐模型。\n⚠️ 切换服务商后请确认 API Key 是否正确。")
             }
         }
         .settingsNavBar(title: "服务商")
+        .alert("确认 API Key", isPresented: $showKeyReminder) {
+            Button("去设置") { dismiss() }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("已切换到「\(config.selectedProvider.rawValue)」。请确认 API Key 是否匹配该服务商，否则请求将失败。")
+        }
     }
+
+    @State private var showKeyReminder = false
 }
 
 // MARK: - API URL Edit
@@ -263,6 +289,12 @@ private struct URLEditView: View {
         .onAppear { tempURL = config.apiBaseURL }
         .onChange(of: tempURL) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if config.apiBaseURL != trimmed {
+                config.apiBaseURL = trimmed
+            }
+        }
+        .onDisappear {
+            let trimmed = tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
             if config.apiBaseURL != trimmed {
                 config.apiBaseURL = trimmed
             }
@@ -309,6 +341,12 @@ private struct KeyEditView: View {
         .onAppear { tempKey = config.apiKey }
         .onChange(of: tempKey) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if config.apiKey != trimmed {
+                config.apiKey = trimmed
+            }
+        }
+        .onDisappear {
+            let trimmed = tempKey.trimmingCharacters(in: .whitespacesAndNewlines)
             if config.apiKey != trimmed {
                 config.apiKey = trimmed
             }
