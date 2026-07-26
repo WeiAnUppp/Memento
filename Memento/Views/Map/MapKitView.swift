@@ -408,7 +408,7 @@ struct MapKitView: UIViewRepresentable {
 
             let view = mapView.dequeueReusableAnnotationView(
                 withIdentifier: "Pin", for: point
-            ) as! MKAnnotationView
+            )
 
             view.annotation = point
             view.canShowCallout = false

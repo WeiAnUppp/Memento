@@ -142,7 +142,7 @@ final class DatabaseService {
     }
 
     private func bindText(_ stmt: OpaquePointer?, _ col: Int32, _ value: String) {
-        value.withCString { ptr in
+        _ = value.withCString { ptr in
             sqlite3_bind_text(stmt, col, ptr, -1, SQLITE_TRANSIENT)
         }
     }

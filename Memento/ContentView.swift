@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import CoreLocation
 
 // MARK: - App Page
@@ -716,7 +717,7 @@ struct ContentView: View {
 
     private var readyForInputOverlay: some View {
         let images = captureViewModel.selectedImages
-        let cardSize: CGFloat = min(UIScreen.main.bounds.width - 80, 280)
+        let cardSize: CGFloat = min(Self.screenWidth - 80, 280)
 
         return PhotoCardStack(
             images: images,
@@ -830,6 +831,14 @@ struct ContentView: View {
                 .disabled(isRecording)
             }
         }
+    }
+
+    /// iOS 26 替代 UIScreen.main，从 window scene 获取屏幕尺寸
+    private static var screenWidth: CGFloat {
+        UIApplication.shared
+            .connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.screen.bounds.width ?? 390
     }
 }
 

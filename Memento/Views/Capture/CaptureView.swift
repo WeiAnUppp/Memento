@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Capture Flow View
 
@@ -142,7 +143,7 @@ struct CaptureView: View {
         let images = viewModel.selectedImages
         let count = images.count
         let safeIndex = min(max(mainImageIndex, 0), max(count - 1, 0))
-        let cardSize: CGFloat = min(UIScreen.main.bounds.width - 60, 300)
+        let cardSize: CGFloat = min(currentScreenWidth - 60, 300)
 
         return VStack(spacing: 16) {
             if images.isEmpty {
@@ -396,6 +397,13 @@ struct CaptureView: View {
             }.controlSize(.extraLarge)
             Spacer()
         }
+    }
+
+    /// iOS 26 替代 UIScreen.main.bounds.width
+    private var currentScreenWidth: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        return scenes.first!.screen.bounds.width
     }
 }
 

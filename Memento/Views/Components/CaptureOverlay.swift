@@ -7,6 +7,7 @@
 //  从 CaptureView 提取的可复用 UI 组件，供 ContentView 的底部栏浮层使用
 
 import SwiftUI
+import UIKit
 
 // MARK: - Photo Card Stack
 

@@ -8,7 +8,7 @@
 import SwiftUI
 import Accelerate
 import NaturalLanguage
-import CoreLocation
+import MapKit
 
 // MARK: - Search ViewModel
 
@@ -38,7 +38,6 @@ final class SearchViewModel {
 
     // MARK: - Location Search
 
-    private let geocoder = CLGeocoder()
     private var geocodeCache: [String: CLLocationCoordinate2D] = [:]
 
     private let chineseTokenizer: NSLinguisticTagger = {
@@ -320,17 +319,18 @@ final class SearchViewModel {
         guard !trimmed.isEmpty else { return nil }
         if let cached = geocodeCache[trimmed] { return cached }
 
-        return await withCheckedContinuation { continuation in
-            geocoder.geocodeAddressString(trimmed) { placemarks, error in
-                if let coord = placemarks?.first?.location?.coordinate {
-                    self.geocodeCache[trimmed] = coord
-                    continuation.resume(returning: coord)
-                } else {
-                    print("[SearchViewModel] 地理编码失败: \(trimmed) — \(error?.localizedDescription ?? "")")
-                    continuation.resume(returning: nil)
-                }
+        guard let request = MKGeocodingRequest(addressString: trimmed) else { return nil }
+        do {
+            let results = try await request.mapItems
+            if let first = results.first {
+                let coord = first.location.coordinate
+                geocodeCache[trimmed] = coord
+                return coord
             }
+        } catch {
+            print("[SearchViewModel] 地理编码失败: \(trimmed) — \(error.localizedDescription)")
         }
+        return nil
     }
 
     // MARK: ── Ranking Engine ──
@@ -987,27 +987,11 @@ final class SearchViewModel {
     /// 逆地理编码：GPS → 地址字符串
     private func reverseGeocodeAddress(lat: Double, lon: Double) async -> String? {
         guard lat != 0 || lon != 0 else { return nil }
-        return await withCheckedContinuation { continuation in
-            let loc = CLLocation(latitude: lat, longitude: lon)
-            CLGeocoder().reverseGeocodeLocation(loc) { placemarks, _ in
-                guard let place = placemarks?.first else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                // 省市区+街道，尽量精确
-                let parts = [
-                    place.administrativeArea,
-                    place.locality,
-                    place.subLocality,
-                    place.thoroughfare,
-                ].compactMap { $0 }
-                // 去重（上海市上海市 → 上海市）
-                var seen = Set<String>()
-                let unique = parts.filter { seen.insert($0).inserted }
-                let addr = unique.isEmpty ? nil : unique.joined()
-                continuation.resume(returning: addr)
-            }
-        }
+        let location = CLLocation(latitude: lat, longitude: lon)
+        guard let request = MKReverseGeocodingRequest(location: location),
+              let first = try? await request.mapItems.first,
+              let rep = first.addressRepresentations else { return nil }
+        return rep.fullAddress(includingRegion: false, singleLine: true)
     }
 
     /// 记录时间 → 口语化表达，供 AI 总结用"上个月""三天前"这类说法

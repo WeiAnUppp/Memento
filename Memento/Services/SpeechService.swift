@@ -36,7 +36,7 @@ final class SpeechService: NSObject, SFSpeechRecognizerDelegate {
                 continuation.resume(returning: status)
             }
         }
-        await setAuthStatus(status)
+        await MainActor.run { setAuthStatus(status) }
     }
 
     @MainActor

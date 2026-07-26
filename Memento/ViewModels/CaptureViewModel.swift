@@ -183,7 +183,7 @@ final class CaptureViewModel {
             var imagePaths: [String] = []
             for image in images {
                 if let data = image.jpegData(compressionQuality: 0.85) {
-                    if let path = try? DatabaseService.saveImage(data) {
+                    if let path = try? await DatabaseService.saveImage(data) {
                         imagePaths.append(path)
                     }
                 }
@@ -195,7 +195,7 @@ final class CaptureViewModel {
             if let gps = gpsList.first, let coord = gps {
                 lat = coord.latitude
                 lon = coord.longitude
-            } else if let loc = self.locationService.currentLocation {
+            } else if let loc = await self.locationService.currentLocation {
                 lat = loc.coordinate.latitude
                 lon = loc.coordinate.longitude
             } else {
@@ -215,14 +215,14 @@ final class CaptureViewModel {
                 return cleaned.isEmpty ? nil : cleaned.joined(separator: "、")
             }()
 
-            var item = Item(
+            let item = Item(
                 name: name,
                 itemDescription: response.description,
                 summary: response.summary,
                 displayDescription: response.displayDescription,
                 displayScene: response.displayScene,
                 locationLabel: response.locationLabel,
-                keywords: jsonString(from: response.keywords),
+                keywords: await jsonString(from: response.keywords),
                 scene: response.scene.isEmpty ? nil : response.scene,
                 nearbyObjects: nearbyStr,
                 userNote: context.isEmpty ? nil : context,
@@ -234,21 +234,23 @@ final class CaptureViewModel {
                 updatedAt: Date()
             )
 
-            let text = self.embeddingService.embeddingText(
+            let text = await self.embeddingService.embeddingText(
                 from: item.name,
                 description: item.itemDescription,
                 keywords: item.keywords,
                 scene: item.scene,
                 nearbyObjects: item.nearbyObjects
             )
-            let embedding = self.embeddingService.vector(for: text)
+            let embedding = await self.embeddingService.vector(for: text)
 
             do {
-                let id = try self.dbService.insert(item, embedding: embedding)
-                item.id = id
+                let id = try await self.dbService.insert(item, embedding: embedding)
+                var savedItem = item
+                savedItem.id = id
+                let finalItem = savedItem
                 await MainActor.run {
-                    self.lastSavedItemCoordinate = item.coordinate
-                    self.state = .saved(item)
+                    self.lastSavedItemCoordinate = finalItem.coordinate
+                    self.state = .saved(finalItem)
                 }
             } catch {
                 await MainActor.run {

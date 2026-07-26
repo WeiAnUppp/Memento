@@ -44,7 +44,7 @@ final class MapViewModel {
 
         Task.detached(priority: .userInitiated) {
             do {
-                let fetched = try DatabaseService.shared.fetchAll()
+                let fetched = try await DatabaseService.shared.fetchAll()
                 await MainActor.run {
                     self.items = fetched
                     self.isLoading = false

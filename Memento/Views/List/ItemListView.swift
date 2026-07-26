@@ -28,7 +28,7 @@ struct ItemListView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .onAppear { loadItems() }
-        .onChange(of: refreshTrigger) { _ in loadItems() }
+        .onChange(of: refreshTrigger) { loadItems() }
     }
 
     // MARK: - Grid

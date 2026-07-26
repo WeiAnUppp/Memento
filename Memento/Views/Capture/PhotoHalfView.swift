@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import Photos
 import CoreLocation
 
@@ -212,10 +213,10 @@ struct AssetThumbnail: View {
     private func loadThumbnail() {
         guard thumbnail == nil else { return }
 
-        let screenWidth = UIScreen.main.bounds.width
-        let itemWidth = (screenWidth - 4) / 3
-        let targetSize = CGSize(width: itemWidth * UIScreen.main.scale,
-                                 height: itemWidth * UIScreen.main.scale)
+        let screen = Self.currentScreen
+        let itemWidth = (screen.bounds.width - 4) / 3
+        let targetSize = CGSize(width: itemWidth * screen.scale,
+                                 height: itemWidth * screen.scale)
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .opportunistic
@@ -237,4 +238,16 @@ struct AssetThumbnail: View {
 
 #Preview {
     PhotoHalfView { _, _, _ in }
+}
+
+// MARK: - UIScreen.current Helper
+
+extension AssetThumbnail {
+    /// iOS 26 替代 UIScreen.main，从 window scene 获取屏幕
+    private static var currentScreen: UIScreen {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        // App 运行时始终存在活跃 window scene
+        return scenes.first!.screen
+    }
 }

@@ -325,7 +325,6 @@ struct SearchResultView: View {
             Text(prefix)
                 .font(.body)
                 .foregroundStyle(.primary)
-                + (isTyping ? Text("|").foregroundStyle(.blue) : Text(""))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

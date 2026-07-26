@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import MapKit
 
 // MARK: - ItemDetailContent
@@ -397,14 +398,13 @@ struct ItemDetailContent: View {
 
     private func geocodeLocation() async {
         let location = CLLocation(latitude: item.latitude, longitude: item.longitude)
-        guard let placemarks = try? await CLGeocoder().reverseGeocodeLocation(location),
-              let pm = placemarks.first else { return }
-        var parts: [String] = []
-        if let city = pm.locality { parts.append(city) }
-        if let area = pm.subLocality { parts.append(area) }
-        if let street = pm.thoroughfare { parts.append(street) }
-        guard !parts.isEmpty else { return }
-        await MainActor.run { locationName = parts.joined() }
+        guard let request = MKReverseGeocodingRequest(location: location),
+              let first = try? await request.mapItems.first,
+              let rep = first.addressRepresentations else { return }
+        // 获取含省市的完整地址（不含国家）
+        guard let addr = rep.fullAddress(includingRegion: false, singleLine: true),
+              !addr.isEmpty else { return }
+        await MainActor.run { locationName = addr }
     }
 }
 
