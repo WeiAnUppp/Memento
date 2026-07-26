@@ -9,7 +9,6 @@ import SwiftUI
 import MapKit
 
 // MARK: - ItemDetailContent
-
 struct ItemDetailContent: View {
     let item: Item
     let safeArea: EdgeInsets
@@ -75,7 +74,6 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Main Image Carousel
-
     @ViewBuilder
     private var mainImageCarousel: some View {
         let paths = item.imagePaths
@@ -116,12 +114,10 @@ struct ItemDetailContent: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.bottom, 12)
         }
     }
 
     // MARK: Header
-
     private var headerSection: some View {
         HStack(spacing: 12) {
             Button {
@@ -144,7 +140,7 @@ struct ItemDetailContent: View {
             }
             Spacer()
         }
-        .padding(16)
+        .padding()
     }
 
     private var subtitleText: String {
@@ -161,7 +157,6 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Photo Grid
-
     @ViewBuilder
     private var photoGridSection: some View {
         let paths = item.imagePaths
@@ -176,7 +171,7 @@ struct ItemDetailContent: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .padding(.bottom, 16)
+            .padding(.bottom)
         }
     }
 
@@ -202,7 +197,6 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Tags
-
     @ViewBuilder
     private var tagsSection: some View {
         if !keywordTags.isEmpty {
@@ -211,40 +205,39 @@ struct ItemDetailContent: View {
                     ForEach(keywordTags, id: \.self) { tag in
                         Text(tag)
                             .font(.subheadline)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
+                            .padding(12)
                             .background(.quaternary, in: Capsule())
                     }
                 }
                 .padding(.horizontal, 16)
             }
-            .padding(.bottom, 16)
         }
     }
 
     // MARK: Description
-
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("描述").font(.subheadline).foregroundStyle(.secondary)
-
+            HStack {
+                Text("描述")
+                    .font(.title2)
+                    .bold()
+                Spacer()
+                if item.itemDescription.count > 80 {
+                    Button {
+                        withAnimation(.smooth(duration: 0.25)) { descriptionExpanded.toggle() }
+                    } label: {
+                        Text(descriptionExpanded ? "收起 ▲" : "展开 ▼")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.blue)
+                }
+            }
             Text(descriptionExpanded ? item.itemDescription : displaySummary)
                 .font(.body)
                 .lineLimit(descriptionExpanded ? nil : 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            if item.itemDescription.count > 80 {
-                Button {
-                    withAnimation(.smooth(duration: 0.25)) { descriptionExpanded.toggle() }
-                } label: {
-                    Text(descriptionExpanded ? "收起 ▲" : "展开 ▼")
-                        .font(.subheadline)
-                }
-                .foregroundStyle(.blue)
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding()
     }
 
     private var displaySummary: String {
@@ -254,30 +247,31 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Scene
-
     @ViewBuilder
     private var sceneSection: some View {
         if let scene = item.scene, !scene.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("所在场景").font(.subheadline).foregroundStyle(.secondary)
-
+                HStack {
+                    Text("所在场景")
+                        .font(.title2)
+                        .bold()
+                    Spacer()
+                    if scene.count > 50 {
+                        Button {
+                            withAnimation(.smooth(duration: 0.25)) { sceneExpanded.toggle() }
+                        } label: {
+                            Text(sceneExpanded ? "收起 ▲" : "展开 ▼")
+                                .font(.subheadline)
+                        }
+                        .foregroundStyle(.blue)
+                    }
+                }
                 Text(sceneExpanded ? scene : displaySceneText)
                     .font(.body)
                     .lineLimit(sceneExpanded ? nil : 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                if scene.count > 50 {
-                    Button {
-                        withAnimation(.smooth(duration: 0.25)) { sceneExpanded.toggle() }
-                    } label: {
-                        Text(sceneExpanded ? "收起 ▲" : "展开 ▼")
-                            .font(.subheadline)
-                    }
-                    .foregroundStyle(.blue)
-                }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding()
         }
     }
 
@@ -287,7 +281,6 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Info
-
     private var infoSection: some View {
         VStack(spacing: 8) {
             if let loc = locationName {
@@ -301,8 +294,7 @@ struct ItemDetailContent: View {
             infoRow(icon: "pencil.line", label: "修改",
                     value: item.updatedAt.friendlyChineseFormat)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding()
     }
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
@@ -320,7 +312,6 @@ struct ItemDetailContent: View {
     }
 
     // MARK: Map
-
     private var mapSection: some View {
         Map(initialPosition: .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: item.latitude, longitude: item.longitude),
@@ -347,14 +338,12 @@ struct ItemDetailContent: View {
                     }
                 }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding()
     }
 
     // MARK: Buttons
-
     private var actionButtons: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             Button {
                 // 编辑功能（可后续接入编辑页）
             } label: {
@@ -362,7 +351,6 @@ struct ItemDetailContent: View {
                     Image(systemName: "pencil")
                     Text("编辑")
                 }
-                .font(.headline)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
@@ -376,18 +364,15 @@ struct ItemDetailContent: View {
                     Image(systemName: "trash")
                     Text("删除")
                 }
-                .font(.headline)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
             }
             .background(.quaternary, in: Capsule())
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .padding()
     }
 
     // MARK: Helpers
-
     private var keywordTags: [String] {
         guard let keywords = item.keywords,
               let data = keywords.data(using: .utf8),
@@ -426,7 +411,6 @@ struct ItemDetailContent: View {
 }
 
 // MARK: - Emoji Keyboard Bridge
-
 /// 强制弹出系统 emoji 键盘的 UITextField
 fileprivate final class UIEmojiTextField: UITextField {
 
