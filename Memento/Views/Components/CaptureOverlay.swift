@@ -52,15 +52,13 @@ struct PhotoCardStack: View {
                 // 流体弹簧：自然减速感，高阻尼不弹跳
                 .animation(.spring(response: 0.35, dampingFraction: 0.82), value: safeIndex)
 
-                // 页码指示器
-                if count > 1 {
-                    HStack(spacing: 6) {
-                        ForEach(0..<count, id: \.self) { index in
-                            Capsule()
-                                .fill(index == safeIndex ? Color.primary : Color.secondary.opacity(0.25))
-                                .frame(width: index == safeIndex ? 16 : 6, height: 6)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: safeIndex)
-                        }
+                // 页码指示器（始终显示，保持单图/多图高度一致）
+                HStack(spacing: 6) {
+                    ForEach(0..<max(count, 1), id: \.self) { index in
+                        Capsule()
+                            .fill(index == safeIndex ? Color.primary : Color.secondary.opacity(0.25))
+                            .frame(width: index == safeIndex ? 16 : 6, height: 6)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: safeIndex)
                     }
                 }
             }

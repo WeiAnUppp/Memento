@@ -154,10 +154,11 @@ fileprivate struct TransitionFullScreenCover<Hero: View, Content: View>: View {
             dismiss()
         } label: {
             Image(systemName: "xmark")
-                .frame( width: 20, height: 30)
-                .contentShape(.circle)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
         }
-        .buttonStyle(.glass)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .tint(.primary)
         .padding(.trailing, 15)
         .animation(.linear(duration: 0.15)) {
             $0.opacity(animateContents ? 1 : 0)

@@ -108,11 +108,9 @@ struct ItemDetailContent: View {
                 .frame(height: 300)
                 .padding(.horizontal, 16)
 
-                if paths.count > 1 {
-                    Text("\(currentImageIndex + 1) / \(paths.count)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Text("\(currentImageIndex + 1) / \(paths.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
     }

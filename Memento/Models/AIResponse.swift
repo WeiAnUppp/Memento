@@ -140,6 +140,24 @@ struct SearchResultItem: Codable {
     let locationLabel: String?
     let nearby: String?
     let address: String?
+    /// 记录时间的口语化表达，如"上个月""3天前""今天上午"
+    let recordedAt: String?
+
+    init(
+        name: String,
+        scene: String? = nil,
+        locationLabel: String? = nil,
+        nearby: String? = nil,
+        address: String? = nil,
+        recordedAt: String? = nil
+    ) {
+        self.name = name
+        self.scene = scene
+        self.locationLabel = locationLabel
+        self.nearby = nearby
+        self.address = address
+        self.recordedAt = recordedAt
+    }
 }
 
 /// AI 搜索总结响应

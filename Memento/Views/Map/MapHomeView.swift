@@ -91,15 +91,16 @@ struct MapHomeView: View {
                     }
                     .background(.background)
 
-                    // X 关闭按钮（与列表详情页一致：glass 风格 xmark）
+                    // X 关闭按钮（与搜索页一致：玻璃圆底 + primary 色 xmark）
                     Button {
                         showDetail = false
                     } label: {
                         Image(systemName: "xmark")
-                            .frame(width: 20, height: 30)
-                            .contentShape(.circle)
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.glass)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .tint(.primary)
                     .padding(.top, 16)
                     .padding(.trailing, 16)
                 }

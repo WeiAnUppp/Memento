@@ -902,9 +902,8 @@ private struct SearchModalView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.body.weight(.semibold))
                     }
-                    .tint(.primary)
                 }
             }
         }

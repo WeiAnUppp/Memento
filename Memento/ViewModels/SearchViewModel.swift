@@ -964,14 +964,17 @@ final class SearchViewModel {
                     scene: r.item.scene,
                     locationLabel: r.item.locationLabel,
                     nearby: r.item.nearbyObjects,
-                    address: addrMap[i] ?? nil
+                    address: addrMap[i] ?? nil,
+                    recordedAt: Self.colloquialTime(r.item.createdAt)
                 )
             }
         }
 
         do {
             let summary = try await aiService.summarizeSearchResults(query: query, topItems: items)
-            let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            var trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 确保最后一个字符是句号
+            trimmed = Self.ensureTrailingPeriod(trimmed)
             guard !trimmed.isEmpty else { return }
             await MainActor.run {
                 suggestionText = Self.smartTruncate(trimmed, maxChars: 120)
@@ -1007,12 +1010,47 @@ final class SearchViewModel {
         }
     }
 
+    /// 记录时间 → 口语化表达，供 AI 总结用"上个月""三天前"这类说法
+    private static func colloquialTime(_ date: Date) -> String {
+        let cal = Calendar.current
+        let now = Date()
+
+        if cal.isDateInToday(date) {
+            let hour = cal.component(.hour, from: date)
+            switch hour {
+            case 0..<6:   return "今天凌晨"
+            case 6..<12:  return "今天上午"
+            case 12..<14: return "今天中午"
+            case 14..<18: return "今天下午"
+            default:      return "今天晚上"
+            }
+        }
+        if cal.isDateInYesterday(date) { return "昨天" }
+
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: date),
+                                      to: cal.startOfDay(for: now)).day ?? 0
+        switch days {
+        case 2:      return "前天"
+        case 3...6:  return "\(days)天前"
+        case 7...13: return "上周"
+        case 14...20: return "两周前"
+        case 21...45: return "上个月"
+        case 46...75: return "两个月前"
+        case 76...300:
+            let months = max(3, days / 30)
+            return "\(months)个月前"
+        default:
+            let years = max(1, days / 365)
+            return years == 1 ? "去年" : "\(years)年前"
+        }
+    }
+
     /// 智能截断：在句子边界（。！？）处断开，避免卡在半句话
     private static func smartTruncate(_ text: String, maxChars: Int) -> String {
         guard text.count > maxChars else { return text }
         let target = text.prefix(maxChars)
-        // 找最后一个句子结束标点
-        let sentenceEnders: [Character] = ["。", "！", "？", "，", "；"]
+        // 找最后一个句子结束标点（不含逗号和分号，确保结尾是完整句子）
+        let sentenceEnders: [Character] = ["。", "！", "？"]
         for ch in target.reversed() {
             if sentenceEnders.contains(ch) {
                 if let idx = target.lastIndex(of: ch),
@@ -1027,6 +1065,21 @@ final class SearchViewModel {
             return String(target[..<lastSpace])
         }
         return String(target)
+    }
+
+    /// 确保文本以中文句号结尾，去掉末尾逗号/分号后补句号
+    private static func ensureTrailingPeriod(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+        var result = text
+        // 去掉末尾的逗号、分号、空格
+        while let last = result.last, last == "，" || last == "；" || last == " " || last == "," || last == ";" {
+            result.removeLast()
+        }
+        // 如果已经以句号/感叹号/问号结尾，不重复添加
+        if let last = result.last, last == "。" || last == "！" || last == "？" || last == "!" || last == "?" {
+            return result
+        }
+        return result + "。"
     }
 }
 
